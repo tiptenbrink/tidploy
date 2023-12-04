@@ -7,3 +7,6 @@ edition = "2021"
 clap = { version = "4.4.10", features = ["derive"] }
 keyring = { version = "2.1.0", default-features = false, features=[ "linux-no-secret-service" ] }
 rpassword = "7.3.1"
+serde = { version = "1.0.193", features = ["derive"] }
+spinoff = { version = "0.8.0", features = ["line"] }
+toml = "0.8.8"

@@ -3,7 +3,9 @@
 use clap::{Parser, ValueEnum, Subcommand};
 use rpassword::prompt_password;
 use keyring::{Entry, Result as KeyringResult, Error as KeyringError, Error::NoEntry};
-use std::process::{Command as Cmd, Output};
+use serde::Deserialize;
+use std::{process::{Command as Cmd, Output, Stdio}, io::BufReader, io::BufRead, fs};
+use spinoff::{Spinner, spinners, Streams};
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum Environment {
@@ -91,8 +93,8 @@ enum Commands {
 
 static TMP_DIR: &str = "/tmp/ti_dploy";
 
-fn get_password() -> KeyringResult<Option<String>> {
-    let entry = Entry::new("ti_dploy", "default")?;
+fn get_password(stage: &str) -> KeyringResult<Option<String>> {
+    let entry = Entry::new("ti_dploy", stage)?;
     match entry.get_password() {
         Ok(pw) => Ok(Some(pw)),
         Err(NoEntry) => Ok(None),
@@ -116,17 +118,17 @@ fn location(env: &str, tag: &str) -> String {
     format!("{}/{}", TMP_DIR, env_tag_name)
 }
 
-fn download_release(repo: &str, env: &str, tag: &str) -> () {
-    let output = Cmd::new("gh")
-        .arg("release")
-        .arg("download")
-        .arg(tag)
-        .arg("-R")
-        .arg(repo)
-        .arg("-p")
-        .arg(env)
-        .output().unwrap();
-}
+// fn download_release(repo: &str, env: &str, tag: &str) -> () {
+//     let output = Cmd::new("gh")
+//         .arg("release")
+//         .arg("download")
+//         .arg(tag)
+//         .arg("-R")
+//         .arg(repo)
+//         .arg("-p")
+//         .arg(env)
+//         .output().unwrap();
+// }
 
 fn make_archive(source_dir_parent: &str, source_dir: &str, env: &str, tag: &str) -> () {
     mk_tmp_dir();
@@ -150,8 +152,10 @@ fn make_archive(source_dir_parent: &str, source_dir: &str, env: &str, tag: &str)
         .arg("-czf")
         .arg(archive_loc)
         .arg(source_dir);
-    println!("{:?}", output_archive);
+
     output_archive.output().unwrap();
+
+    println!("Saved deploy archive in tmp.");
 }
 
 fn download_tag(repo_url: &str, env: &str, tag: &str) -> () {
@@ -167,13 +171,18 @@ fn download_tag(repo_url: &str, env: &str, tag: &str) -> () {
         .arg("-rf")
         .arg(&repo_loc)
         .output().unwrap();
+
+    let mut sp = Spinner::new(spinners::Line, "Cloning repository...", None);
     
-    let repo_clone = Cmd::new("git")
+    let repo_clone_stdout = Cmd::new("git")
         .arg("clone")
         .arg("--filter=tree:0")
         .arg(repo_url)
         .arg(&repo_loc)
+        .stdout(Stdio::piped())
         .output().unwrap();
+
+    sp.success("Repository cloned!");
 
     let checkout = Cmd::new("git")
         .current_dir(&repo_loc)
@@ -181,13 +190,15 @@ fn download_tag(repo_url: &str, env: &str, tag: &str) -> () {
         .arg(tag)
         .output().unwrap();
 
+    println!("Checked out ref {}.", tag);
+
     let use_dir = format!("{}/use", repo_loc);
 
     make_archive(&use_dir, env, env, tag);
 }
 
 
-fn move_to_archives(env: &str, tag: &str) -> () {
+fn copy_to_archives(env: &str, tag: &str) -> () {
     mk_tmp_dir();
 
     let archives_dir = format!("{}/archives", TMP_DIR);
@@ -206,10 +217,12 @@ fn move_to_archives(env: &str, tag: &str) -> () {
         .output().unwrap();
     
 
-    let move_archive = Cmd::new("mv")
+    let copy_archive = Cmd::new("cp")
         .arg(format!("./{}", &archive_name))
         .arg(&archive_loc)
         .output().unwrap();
+
+    println!("Copied archive {} to tmp archives.", archive_name);
 }
 
 fn mk_tmp_dir() -> () {
@@ -247,10 +260,10 @@ fn extract(env: &str, tag: &str) -> () {
         .arg(env_tag)
         .arg("--strip-components")
         .arg("1");
-    
-    println!("{:?}", tar_prog);
 
     tar_prog.output().unwrap();
+
+    println!("Extracted archive {}.", archive_name);
     ()
 }
 
@@ -260,12 +273,12 @@ enum Error {
     KeyringError(KeyringError)
 }
 
-fn add_password_maybe(env: Environment, cmd: &mut Cmd) -> Result<&mut Cmd, Error> {
+fn add_password_maybe<'a, 'b>(env: Environment, cmd: &'a mut Cmd, stage: Stage, env_key: &'b str) -> Result<&'a mut Cmd, Error> {
     match env {
         Environment::Localdev => Ok(cmd),
         Environment::Staging | Environment::Production => {
-            match get_password() {
-                Ok(Some(password)) => Ok(cmd.env("TI_DPLOY_SECRET", password)),
+            match get_password(stage.to_string()) {
+                Ok(Some(password)) => Ok(cmd.env(env_key, password)),
                 Ok(None) => Err(Error::NoPassword),
                 Err(e) => Err(Error::KeyringError(e))
             }
@@ -277,6 +290,24 @@ fn show_cmd_result(output: &Output) {
     println!("{}", output.status);
     println!("{}", String::from_utf8(output.stderr.clone()).unwrap());
     println!("{}", String::from_utf8(output.stdout.clone()).unwrap());
+}
+
+#[derive(Deserialize)]
+struct DployConfig {
+   secrets: DploySecrets,
+}
+
+#[derive(Deserialize)]
+struct DploySecrets {
+    env_var_name: String
+}
+
+fn load_dploy_config(file_path: &str) -> DployConfig {
+    let toml_file = fs::read_to_string(file_path).unwrap();
+
+    let dploy_config: DployConfig = toml::from_str(&toml_file).unwrap();
+
+    dploy_config
 }
 
 fn main() {
@@ -296,7 +327,7 @@ fn main() {
         },
         Some(Commands::Download { env, tag }) => {
             let env_str = env.to_string();
-            let tag = "b648930";
+            let tag = "ea0f030";
             download_tag(repo_url, env_str, tag);
             //TODO download step
             extract(env_str, &tag);
@@ -307,25 +338,53 @@ fn main() {
 
             let env_str = env.to_string();
 
+            copy_to_archives(env_str, &tag);
             extract(env_str, &tag);
+
+            println!("Running deploy.");
 
             let loc_str = location(env_str, &tag);
 
-            let mut run_secrets = Cmd::new(format!("{}/{}", loc_str, "secrets.sh"));
-            let pw_cmd = add_password_maybe(env, &mut run_secrets);
+            let config_path = format!("{}/{}", &loc_str, "tidploy.toml");
+            let dploy_config = load_dploy_config(&config_path);
+            let secret_env_key = dploy_config.secrets.env_var_name;
+
+            let mut sp = Spinner::new(spinners::Line, "Loading secrets...", None);
+            let mut run_secrets = Cmd::new(format!("{}/{}", &loc_str, "secrets.sh"));
+            let pw_cmd = add_password_maybe(env, &mut run_secrets, Stage::Deploy, &secret_env_key);
             if pw_cmd.as_ref().is_err_and(|e| matches!(e, Error::NoPassword)) {
                 println!("Set password using `dploy auth`!");
                 return ()
             }
             let run_secrets = pw_cmd.unwrap();
-
             let secrets_output = run_secrets.output().unwrap();
+            sp.success("Secrets loaded into environment!");
             show_cmd_result(&secrets_output);
 
-            // let entrypoint_output = Cmd::new(format!("{}/{}", location, "entrypoint.sh"))
-            // .output().unwrap();
+            let deploy_name = format!("{}_{}", env_str, &tag).replace(".", "dot");
 
-            // show_cmd_result(&entrypoint_output);
+            let mut entrypoint_output = Cmd::new(format!("{}/{}", &loc_str, "entrypoint.sh"))
+                .current_dir(&loc_str)
+                .env("DEPLOY_NAME", deploy_name)
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+
+            let entrypoint_stdout = entrypoint_output.stdout.take().unwrap();
+
+            let reader = BufReader::new(entrypoint_stdout);
+
+            reader
+                .lines()
+                .filter_map(|line| line.ok())
+                .for_each(|line| println!("{}", line));
+
+            let output_stderr = entrypoint_output.wait_with_output().unwrap().stderr;
+            if output_stderr.len() > 0 {
+                println!("{}", String::from_utf8(output_stderr).unwrap());
+            }
+            
+
         }
         None => {}
     }
