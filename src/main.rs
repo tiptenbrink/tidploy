@@ -1,11 +1,16 @@
+mod config;
+mod secret_store;
+mod secrets;
+
+use crate::config::load_dploy_config;
+use crate::secret_store::{get_password, set_password};
+use crate::secrets::SecretOutput;
 use clap::{Parser, Subcommand, ValueEnum};
-use keyring::{Entry, Error as KeyringError, Error::NoEntry, Result as KeyringResult};
+use keyring::Error as KeyringError;
 use rpassword::prompt_password;
-use serde::Deserialize;
 use spinoff::{spinners, Spinner};
 use std::{
     collections::HashMap,
-    fs,
     io::BufRead,
     io::BufReader,
     path::Path,
@@ -96,21 +101,6 @@ enum Commands {
 
 static TMP_DIR: &str = "/tmp/ti_dploy";
 
-fn get_password(stage: &str) -> KeyringResult<Option<String>> {
-    let entry = Entry::new("ti_dploy", stage)?;
-    match entry.get_password() {
-        Ok(pw) => Ok(Some(pw)),
-        Err(NoEntry) => Ok(None),
-        Err(err) => Err(err),
-    }
-}
-
-fn set_password(password: &str, stage: &str) -> KeyringResult<()> {
-    let entry = Entry::new("ti_dploy", stage)?;
-    entry.set_password(password)?;
-    Ok(())
-}
-
 fn env_tag_name(env: &str, tag: &str) -> String {
     format!("{}_{}", env, tag)
 }
@@ -120,18 +110,6 @@ fn location(env: &str, tag: &str) -> String {
 
     format!("{}/{}", TMP_DIR, env_tag_name)
 }
-
-// fn download_release(repo: &str, env: &str, tag: &str) -> () {
-//     let output = Cmd::new("gh")
-//         .arg("release")
-//         .arg("download")
-//         .arg(tag)
-//         .arg("-R")
-//         .arg(repo)
-//         .arg("-p")
-//         .arg(env)
-//         .output().unwrap();
-// }
 
 fn make_archive(source_dir_parent: &str, source_dir: &str, env: &str, tag: &str) {
     mk_tmp_dir();
@@ -226,36 +204,10 @@ fn create_archive(repo_url: &str, env: &str, tag: &str, git_ref_opt: Option<Stri
         }
     }
 
-    let use_dir = format!("{}/use", repo_loc);
+    let use_dir = format!("{}/deploy/use", repo_loc);
 
     make_archive(&use_dir, env, env, tag);
 }
-
-// fn copy_to_archives(env: &str, tag: &str) {
-//     mk_tmp_dir();
-
-//     let archives_dir = format!("{}/archives", TMP_DIR);
-//     let _mk_tmp_dir = Cmd::new("mkdir")
-//         .arg("-p")
-//         .arg(&archives_dir)
-//         .output().unwrap();
-
-//     let env_tag = env_tag_name(env, tag);
-//     let archive_name = format!("{}.tar.gz", &env_tag);
-
-//     let archive_loc = format!("{}/{}", &archives_dir, &archive_name);
-
-//     let _remove_existing = Cmd::new("rm")
-//         .arg(&archive_loc)
-//         .output().unwrap();
-
-//     let _copy_archive = Cmd::new("cp")
-//         .arg(format!("./{}", &archive_name))
-//         .arg(&archive_loc)
-//         .output().unwrap();
-
-//     println!("Copied archive {} to tmp archives.", archive_name);
-// }
 
 fn mk_tmp_dir() {
     let _mk_tmp_dir = Cmd::new("mkdir").arg("-p").arg(TMP_DIR).output().unwrap();
@@ -320,36 +272,6 @@ fn add_password_maybe<'a>(
         None => cmd,
         Some(password) => cmd.env(env_key, password),
     }
-}
-
-#[derive(Deserialize)]
-struct SecretOutput {
-    key: String,
-    value: String,
-}
-
-#[derive(Deserialize)]
-struct DployConfig {
-    secrets: DploySecrets,
-    info: DployInfo,
-}
-
-#[derive(Deserialize)]
-struct DployInfo {
-    latest: String,
-}
-
-#[derive(Deserialize)]
-struct DploySecrets {
-    ids: Vec<String>,
-}
-
-fn load_dploy_config(file_path: &str) -> DployConfig {
-    let toml_file = fs::read_to_string(file_path).unwrap();
-
-    let dploy_config: DployConfig = toml::from_str(&toml_file).unwrap();
-
-    dploy_config
 }
 
 fn main() {
@@ -422,7 +344,7 @@ fn main() {
                     repo_url,
                     env_str,
                     &tag,
-                    Some(dploy_config.info.latest.clone()),
+                    Some(dploy_config.latest_ref()),
                     true,
                 );
                 // Reload config
@@ -441,13 +363,9 @@ fn main() {
             }
             .unwrap();
 
-            // if true {
-            //     return;
-            // }
-
             let mut sp = Spinner::new(spinners::Line, "Loading secrets...", None);
             let mut secrets = HashMap::<String, String>::new();
-            for id in dploy_config.secrets.ids {
+            for id in dploy_config.get_secrets() {
                 let mut run_secrets = Cmd::new("bws");
                 let run_secrets = add_password_maybe(
                     &mut run_secrets,
