@@ -1,7 +1,23 @@
-mod cli;
-mod config;
-mod secret_store;
-mod secrets;
+use crate::config::load_dploy_config;
+use crate::secret_store::{get_password, set_password};
+use crate::secrets::SecretOutput;
+use thiserror::Error;
+use clap::{Parser, Subcommand, ValueEnum};
+use keyring::Error as KeyringError;
+use rpassword::prompt_password;
+use spinoff::{spinners, Spinner};
+use std::fs::{self, File};
+use std::string::FromUtf8Error;
+use std::{
+    io::Error as IOError,
+    collections::HashMap,
+    io::BufRead,
+    io::BufReader,
+    path::Path,
+    process::{Command as Cmd, Stdio},
+    env
+};
+use anyhow::Result;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum Environment {
@@ -100,26 +116,44 @@ fn env_tag_name(env: &str, tag: &str) -> String {
     format!("{}_{}", env, tag)
 }
 
-fn location(env: &str, tag: &str) -> String {
+fn location(name: &str, env: &str, tag: &str) -> String {
     let env_tag_name = env_tag_name(env, tag);
 
-    format!("{}/{}", TMP_DIR, env_tag_name)
+    format!("{}/{}_{}", TMP_DIR, name, env_tag_name)
 }
 
-fn make_archive(source_dir_parent: &str, source_dir: &str, env: &str, tag: &str) {
-    mk_tmp_dir();
+fn make_tmp_dir() -> Result<(), FileError> {
+    let tmp_dir_path = Path::new(TMP_DIR);
 
+    if tmp_dir_path.exists() {
+        if tmp_dir_path.is_dir() {
+            return Ok(())
+        }
+
+        fs::remove_file(tmp_dir_path);
+    }
+    
+
+    fs::create_dir_all(tmp_dir_path)?;
+
+    Ok(())
+}
+
+fn make_archive(source_dir_parent: &str, source_dir: &str, env: &str, tag: &str) -> Result<(), FileError> {
     let archives_dir = format!("{}/archives", TMP_DIR);
-    let _mk_tmp_dir = Cmd::new("mkdir")
-        .arg("-p")
-        .arg(&archives_dir)
-        .output()
-        .unwrap();
+    let archives_path = Path::new(&archives_dir);
+    if !archives_path.exists() {
+        fs::create_dir_all(archives_path)?;
+    }
+    
     let archive_name = format!("{}.tar.gz", env_tag_name(env, tag));
 
+    let archive_path = archives_path.join(archive_name);
     let archive_loc = format!("{}/{}", &archives_dir, &archive_name);
 
-    let _remove_existing = Cmd::new("rm").arg(&archive_loc).output().unwrap();
+    if archive_path.exists() {
+        fs::remove_file(archive_path)?;
+    }
 
     let mut output_archive_prog = Cmd::new("tar");
     let output_archive = output_archive_prog
@@ -128,31 +162,77 @@ fn make_archive(source_dir_parent: &str, source_dir: &str, env: &str, tag: &str)
         .arg(archive_loc)
         .arg(source_dir);
 
-    output_archive.output().unwrap();
+    output_archive.output()?;
 
     println!("Saved deploy archive in tmp.");
+
+    Ok(())
 }
 
-fn checkout_tag(repo_loc: &str, git_ref: &str) {
+fn checkout_tag(repo_loc: &str, git_ref: &str) -> Result<(), GitError> {
     let _checkout = Cmd::new("git")
         .current_dir(repo_loc)
         .arg("checkout")
         .arg("-f")
         .arg(git_ref)
-        .output()
-        .unwrap();
+        .output()?;
+
+    Ok(())
 }
 
-fn create_archive(repo_url: &str, env: &str, tag: &str, git_ref_opt: Option<String>, latest: bool) {
-    let loc_str = location(env, tag);
+#[derive(Debug, Error)]
+enum FileError {
+    #[error("IO failure for file!")]
+    IO(#[from] IOError)
+}
+
+#[derive(Debug, Error)]
+enum ProcessError {
+    #[error("IO failure for external process!")]
+    IO(#[from] IOError)
+}
+
+#[derive(Debug, Error)]
+enum DownloadError {
+    #[error("Failure during download dealing with files!")]
+    File(#[from] FileError),
+    #[error("Failure during download dealing with external process!")]
+    Process(#[from] ProcessError)
+}
+
+#[derive(Debug, Error)]
+enum GitError {
+    #[error("IO failure for external process!")]
+    IO(#[from] IOError),
+    #[error("Failure decoding Git output!")]
+    Decode(#[from] FromUtf8Error)
+}
+
+#[derive(Debug, Error)]
+enum PrepareError {
+    #[error("Failure during preparation dealing with files!")]
+    File(#[from] FileError),
+    #[error("Failure during preparation dealing with external process!")]
+    Process(#[from] ProcessError),
+    #[error("Failure during preparation dealing with Git!")]
+    Git(#[from] GitError)
+}
+
+fn create_archive(name: &str, repo_url: &str, env: &str, tag: &str, git_ref_opt: Option<String>, latest: bool) -> Result<(), PrepareError> {
+    let loc_str = location(name, env, tag);
     let repo_loc = format!("{}_repo", loc_str);
 
-    mk_tmp_dir();
+    let repo_path = Path::new(&repo_loc);
+    let exists = repo_path.exists();
 
-    let exists = Path::new(&repo_loc).exists();
+    if !exists {
+        make_tmp_dir()?;
+    }
 
     if !exists || git_ref_opt.is_none() {
-        let _remove_existing = Cmd::new("rm").arg("-rf").arg(&repo_loc).output().unwrap();
+        if exists {
+            fs::remove_dir_all(repo_path).map_err(FileError::IO)?;
+        }
 
         let mut sp = Spinner::new(spinners::Line, "Cloning repository...", None);
 
@@ -162,15 +242,14 @@ fn create_archive(repo_url: &str, env: &str, tag: &str, git_ref_opt: Option<Stri
             .arg(repo_url)
             .arg(&repo_loc)
             .stdout(Stdio::piped())
-            .output()
-            .unwrap();
+            .output().map_err(GitError::IO)?;
 
         sp.success("Repository cloned!");
 
         if let Some(git_ref) = git_ref_opt {
             let mut sp = Spinner::new(spinners::Line, "Checking out ref...", None);
 
-            checkout_tag(&repo_loc, &git_ref);
+            checkout_tag(&repo_loc, &git_ref)?;
 
             sp.success("Checked out ref!");
         }
@@ -178,22 +257,21 @@ fn create_archive(repo_url: &str, env: &str, tag: &str, git_ref_opt: Option<Stri
         if exists && latest {
             let mut sp = Spinner::new(spinners::Line, "Checking out ref and updating...", None);
 
-            checkout_tag(&repo_loc, &git_ref);
+            checkout_tag(&repo_loc, &git_ref)?;
 
             // In case we were on a branch we now update to latest
             let _pull = Cmd::new("git")
                 .current_dir(&repo_loc)
                 .arg("pull")
-                .output()
-                .unwrap();
+                .output().map_err(GitError::IO)?;
 
-            checkout_tag(&repo_loc, &git_ref);
+            checkout_tag(&repo_loc, &git_ref)?;
 
             sp.success("Checked out ref!");
         } else if exists {
             let mut sp = Spinner::new(spinners::Line, "Checking out ref...", None);
 
-            checkout_tag(&repo_loc, &git_ref);
+            checkout_tag(&repo_loc, &git_ref)?;
 
             sp.success("Checked out ref!");
         }
@@ -201,31 +279,28 @@ fn create_archive(repo_url: &str, env: &str, tag: &str, git_ref_opt: Option<Stri
 
     let use_dir = format!("{}/deploy/use", repo_loc);
 
-    make_archive(&use_dir, env, env, tag);
+    make_archive(&use_dir, env, env, tag)?;
+
+    Ok(())
 }
 
-fn mk_tmp_dir() {
-    let _mk_tmp_dir = Cmd::new("mkdir").arg("-p").arg(TMP_DIR).output().unwrap();
-}
-
-fn extract(env: &str, tag: &str) {
+fn extract(env: &str, tag: &str) -> Result<(), FileError> {
     let archives_dir = format!("{}/archives", TMP_DIR);
     let env_tag = env_tag_name(env, tag);
     let archive_name = format!("{}.tar.gz", &env_tag);
 
     let archive_loc = format!("{}/{}", &archives_dir, &archive_name);
     let target_dir = format!("{}/{}", TMP_DIR, env_tag);
+    let target_path = Path::new(&target_dir);
 
-    let _remove_existing = Cmd::new("rm").arg("-rf").arg(&target_dir).output().unwrap();
+    if target_path.exists() {
+        fs::remove_dir_all(target_path)?;
+    }
 
-    let _mk_tmp_dir = Cmd::new("mkdir")
-        .arg("-p")
-        .arg(&target_dir)
-        .output()
-        .unwrap();
+    make_tmp_dir()?;
 
     let mut tar_prog = Cmd::new("tar");
-    //tar -xzf /tmp/ti_dploy/archives/staging_b648930.tar.gz -C ./staging_b648930 --strip-components 1
+
     // strip components might not work on every platform
     let tar_prog = tar_prog
         .arg("-xzf")
@@ -236,24 +311,20 @@ fn extract(env: &str, tag: &str) {
         .arg("--strip-components")
         .arg("1");
 
-    tar_prog.output().unwrap();
+    tar_prog.output()?;
 
     println!("Extracted archive {}.", archive_name);
+
+    Ok(())
 }
 
-#[derive(Debug)]
-enum Error {
-    NoPassword,
-    KeyringError(KeyringError),
-}
-
-fn get_password_env(env: Environment, stage: Stage) -> Result<Option<String>, Error> {
+fn get_password_env(env: Environment, stage: Stage) -> Result<Option<String>, AuthError> {
     match env {
         Environment::Localdev => Ok(None),
         Environment::Staging | Environment::Production => match get_password(stage.to_string()) {
-            Ok(None) => Err(Error::NoPassword),
+            Ok(None) => Err(AuthError::NoPassword),
             Ok(pw_some) => Ok(pw_some),
-            Err(e) => Err(Error::KeyringError(e)),
+            Err(e) => Err(e.into()),
         },
     }
 }
@@ -274,19 +345,18 @@ struct GitRepo {
     url: String
 }
 
-fn git_root_origin_url() -> String {
+fn git_root_origin_url() -> Result<String, GitError> {
     let git_origin_output = Cmd::new("git")
         .arg("config")
         .arg("--get")
         .arg("remote.origin.url")
-        .output()
-        .unwrap();
+        .output().map_err(GitError::IO)?;
 
     if !git_origin_output.status.success() {
         panic!("Failed to get origin URL!")
     }
 
-    String::from_utf8(git_origin_output.stdout).unwrap().trim_end().to_owned()
+    Ok(String::from_utf8(git_origin_output.stdout)?.trim_end().to_owned())
 }
 
 fn get_repo_url(repo_arg: String) -> GitRepo {
@@ -312,14 +382,40 @@ fn get_repo_url(repo_arg: String) -> GitRepo {
     
 }
 
-fn main() {
+// #[derive(Debug)]
+// enum Error {
+//     NoPassword,
+//     KeyringError(KeyringError),
+// }
+
+#[derive(Error, Debug)]
+enum AuthError {
+    #[error("Failed to get password from prompt!")]
+    Prompt(#[from] IOError),
+    #[error("No password saved.")]
+    NoPassword,
+    #[error("Internal keyring failure.")]
+    Keyring(#[from] KeyringError)
+}
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Auth failure.")]
+    Auth(#[from] AuthError)
+}
+
+fn auth_command(stage: Stage, repo: String) -> Result<(), AuthError> {
+    let password = prompt_password("Enter password:\n")?;
+    set_password(&password, stage.to_string())?;
+    Ok(println!("Set password!"))
+}
+
+fn run_cli() -> Result<(), Error> {
     let args = Args::parse();
 
     match args.command {
         Commands::Auth { stage, repo } => {
-            let password = prompt_password("Enter password:\n").unwrap();
-            set_password(&password, stage.to_string()).unwrap();
-            println!("Set password!");
+            Ok(auth_command(stage, repo)?)
         }
         Commands::Download { env, git_ref, repo } => {
             let env_str = env.to_string();
