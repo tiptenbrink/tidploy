@@ -24,8 +24,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v3
         with:
-          context: dployer
-          tags: ghcr.io/tiptenbrink/tidployer
+          context: bws-dployer
+          tags: ghcr.io/tiptenbrink/bws-dployer:latest
           cache-from: type=gha
           cache-to: type=gha, mode=max
           push: ${{ github.event_name != 'pull_request' }}
