@@ -522,6 +522,39 @@ fn download_command(
     Ok(())
 }
 
+fn run_entrypoint(entrypoint_dir: &str, entrypoint: &str, envs: HashMap<String, String>) -> Result<(), ProcessError> {
+    let mut entrypoint_output = Cmd::new(format!("{}/{}", entrypoint_dir, entrypoint))
+        .current_dir(&entrypoint_dir)
+        .envs(&envs)
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(ProcessError::IO)?;
+
+    let entrypoint_stdout = entrypoint_output
+        .stdout
+        .take()
+        .ok_or(ProcessError::NoOutput)?;
+
+    let reader = BufReader::new(entrypoint_stdout);
+
+    reader
+        .lines()
+        .map_while(Result::ok)
+        .for_each(|line| println!("{}", line));
+
+    let output_stderr = entrypoint_output
+        .wait_with_output()
+        .map_err(ProcessError::IO)?
+        .stderr;
+    if !output_stderr.is_empty() {
+        println!(
+            "{}",
+            String::from_utf8(output_stderr).map_err(ProcessError::Decode)?
+        );
+    }
+    Ok(())
+}
+
 fn deploy_command(
     env: Environment,
     git_ref: Option<String>,
@@ -568,8 +601,8 @@ fn deploy_command(
 
     let loc_str = location(&name, env_str, &tag);
 
-    let config_path = format!("{}/{}", &loc_str, "tidploy.toml");
-    let mut dploy_config = load_dploy_config(&config_path)?;
+    let config_path_dir = loc_str.clone();
+    let mut dploy_config = load_dploy_config(&config_path_dir)?;
 
     // in this case we are on the latest commit, but we need to go back to the correct commit of the latest release
     if latest && new_archive {
@@ -585,7 +618,7 @@ fn deploy_command(
         make_archive(&use_dir, env_str, &name, env_str, &tag)?;
         // Reload config
         extract(&name, env_str, &tag)?;
-        dploy_config = load_dploy_config(&config_path)?;
+        dploy_config = load_dploy_config(&config_path_dir)?;
     }
 
     println!("Running deploy.");
@@ -598,8 +631,39 @@ fn deploy_command(
         other => other,
     }?;
 
+    let mut envs_map = HashMap::<String, String>::new();
+
+    let deploy_name = format!("{}-{}", env_str, &tag).replace('.', "_");
+
+    let recreate_value = if recreate { "yes" } else { "no" };
+
+    // TODO this is too specific logic
+    let deploy_tag_suffix = if tag == "latest" {
+        "".to_owned()
+    } else {
+        format!("-{}", &tag)
+    };
+
+    println!("Running entrypoint with deploy name {}...", &deploy_name);
+    envs_map.insert("RECREATE".to_owned(), recreate_value.to_owned());
+    envs_map.insert("DEPLOY_NAME".to_owned(), deploy_name);
+    envs_map.insert("DEPLOY_TAG_SUFFIX".to_owned(), deploy_tag_suffix);
+    
+
+    if dploy_config.uses_dployer() {
+        let dployer_env = dploy_config.get_dployer_env()?;
+        if let Some(dployer_env_unwr) = dployer_env {
+            let password = maybe_password.clone().ok_or(AuthError::NoPassword)?;
+            envs_map.insert(dployer_env_unwr, password);
+        }
+
+        run_entrypoint(&loc_str, "dployer.sh", envs_map)?;
+
+        return Ok(())
+    }
+
     let mut sp = Spinner::new(spinners::Line, "Loading secrets...", None);
-    let mut secrets = HashMap::<String, String>::new();
+    
 
     for id in dploy_config.get_secrets() {
         let mut run_secrets = Cmd::new("bws");
@@ -616,55 +680,12 @@ fn deploy_command(
 
         let s_output: SecretOutput =
             serde_json::from_str(&secrets_output).map_err(DeployError::SecretsDecode)?;
-        secrets.insert(s_output.key, s_output.value);
+            envs_map.insert(s_output.key, s_output.value);
     }
     sp.success("Secrets loaded into environment!");
 
-    let deploy_name = format!("{}-{}", env_str, &tag).replace('.', "_");
+    run_entrypoint(&loc_str, "entrypoint.sh", envs_map)?;
 
-    let recreate_value = if recreate { "yes" } else { "no" };
-
-    // TODO this is too specific logic
-    let deploy_tag_suffix = if tag == "latest" {
-        "".to_owned()
-    } else {
-        format!("-{}", &tag)
-    };
-
-    println!("Running entrypoint with deploy name {}...", &deploy_name);
-
-    let mut entrypoint_output = Cmd::new(format!("{}/{}", &loc_str, "entrypoint.sh"))
-        .current_dir(&loc_str)
-        .envs(&secrets)
-        .env("RECREATE", recreate_value)
-        .env("DEPLOY_NAME", deploy_name)
-        .env("DEPLOY_TAG_SUFFIX", &deploy_tag_suffix)
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(ProcessError::IO)?;
-
-    let entrypoint_stdout = entrypoint_output
-        .stdout
-        .take()
-        .ok_or(ProcessError::NoOutput)?;
-
-    let reader = BufReader::new(entrypoint_stdout);
-
-    reader
-        .lines()
-        .map_while(Result::ok)
-        .for_each(|line| println!("{}", line));
-
-    let output_stderr = entrypoint_output
-        .wait_with_output()
-        .map_err(ProcessError::IO)?
-        .stderr;
-    if !output_stderr.is_empty() {
-        println!(
-            "{}",
-            String::from_utf8(output_stderr).map_err(ProcessError::Decode)?
-        );
-    }
     Ok(())
 }
 

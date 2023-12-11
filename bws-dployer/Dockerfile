@@ -10,7 +10,7 @@ RUN cargo quickinstall cargo-binstall
 RUN cargo binstall bws -y
 RUN cargo binstall nu -y
 
-WORKDIR /deployer
+WORKDIR /dployer
 
 COPY entrypoint.nu .
 
