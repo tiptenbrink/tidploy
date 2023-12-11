@@ -1,14 +1,14 @@
-use crate::config::load_dploy_config;
+use crate::config::{load_dploy_config, ConfigError};
 use crate::secret_store::{get_password, set_password};
 use crate::secrets::SecretOutput;
+use crate::errors::{ProcessError, FileError, GitError};
 use clap::{Parser, Subcommand, ValueEnum};
 use keyring::Error as KeyringError;
 use rpassword::prompt_password;
 use spinoff::{spinners, Spinner};
 use std::ffi::OsString;
 use std::fs::{self};
-
-use std::string::FromUtf8Error;
+use std::process::Output;
 use std::{
     collections::HashMap,
     env,
@@ -110,7 +110,9 @@ enum Commands {
         #[arg(value_enum)]
         stage: Stage,
 
-        #[arg(default_value = "default")]
+        /// Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. 
+        /// Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
+        #[arg(short, long, default_value = "default_tidploy_git_root")]
         repo: String,
     },
 }
@@ -146,6 +148,7 @@ fn make_tmp_dir() -> Result<(), FileError> {
 fn make_archive(
     source_dir_parent: &str,
     source_dir: &str,
+    name: &str,
     env: &str,
     tag: &str,
 ) -> Result<(), FileError> {
@@ -155,7 +158,7 @@ fn make_archive(
         fs::create_dir_all(archives_path)?;
     }
 
-    let archive_name = format!("{}.tar.gz", env_tag_name(env, tag));
+    let archive_name = format!("{}_{}.tar.gz", name, env_tag_name(env, tag));
 
     let archive_path = archives_path.join(&archive_name);
     let archive_loc = format!("{}/{}", &archives_dir, &archive_name);
@@ -189,28 +192,23 @@ fn checkout_tag(repo_loc: &str, git_ref: &str) -> Result<(), GitError> {
     Ok(())
 }
 
-#[derive(Debug, ThisError)]
-enum FileError {
-    #[error("IO failure for file!")]
-    IO(#[from] IOError),
+#[derive(Debug)]
+struct DeployObject {
+    env: String,
+    repo: String,
+    git_ref: String,
 }
 
 #[derive(Debug, ThisError)]
-enum ProcessError {
-    #[error("IO failure for external process!")]
-    IO(#[from] IOError),
-    #[error("Failure decoding process output!")]
-    Decode(#[from] FromUtf8Error),
-    #[error("Process had no output!")]
-    NoOutput,
-}
-
-#[derive(Debug, ThisError)]
-enum GitError {
-    #[error("IO failure for external process!")]
-    IO(#[from] IOError),
-    #[error("Failure decoding Git output!")]
-    Decode(#[from] FromUtf8Error),
+enum RepoError {
+    #[error("Failure during preparation dealing with files!")]
+    File(#[from] FileError),
+    #[error("Failure during preparation dealing with external process!")]
+    Process(#[from] ProcessError),
+    #[error("Failure during download dealing with Git!")]
+    Git(#[from] GitError),
+    #[error("Target repo {} does not contain deploy/use/{} at ref {}", .0.repo, .0.env, .0.git_ref)]
+    DeployNotFound(DeployObject),
 }
 
 #[derive(Debug, ThisError)]
@@ -221,6 +219,18 @@ enum RepoParseError {
     BadEnvVar(OsString),
     #[error("Repo URL {0} doesn't end with /<name>.git and cannot be parsed!")]
     InvalidURL(String),
+}
+
+#[derive(ThisError, Debug)]
+enum AuthError {
+    #[error("Failed to get name from repo!")]
+    RepoParse(#[from] RepoParseError),
+    #[error("Failed to get password from prompt!")]
+    Prompt(#[from] IOError),
+    #[error("No password saved.")]
+    NoPassword,
+    #[error("Internal keyring failure.")]
+    Keyring(#[from] KeyringError),
 }
 
 #[derive(Debug, ThisError)]
@@ -245,33 +255,14 @@ enum DeployError {
     Download(#[from] DownloadError),
     #[error("Failure getting or setting password!")]
     Auth(#[from] AuthError),
+    #[error("Failure reading config!")]
+    Config(#[from] ConfigError),
     #[error("Failure during download dealing with files!")]
     File(#[from] FileError),
     #[error("Failure during deploy dealing with external process!")]
     Process(#[from] ProcessError),
-    #[error("Failed to load secrets!")]
-    Secrets,
     #[error("Failed to parse secrets JSON!")]
     SecretsDecode(#[from] serde_json::Error),
-}
-
-#[derive(Debug)]
-struct DeployObject {
-    env: String,
-    repo: String,
-    git_ref: String,
-}
-
-#[derive(Debug, ThisError)]
-enum RepoError {
-    #[error("Failure during preparation dealing with files!")]
-    File(#[from] FileError),
-    #[error("Failure during preparation dealing with external process!")]
-    Process(#[from] ProcessError),
-    #[error("Failure during download dealing with Git!")]
-    Git(#[from] GitError),
-    #[error("Target repo {} does not contain deploy/use/{} at ref {}", .0.repo, .0.env, .0.git_ref)]
-    DeployNotFound(DeployObject),
 }
 
 #[derive(ThisError, Debug)]
@@ -288,6 +279,22 @@ enum ErrorRepr {
 
     #[error("Deploy failure.")]
     Deploy(#[from] DeployError),
+}
+
+fn output_check_success(output: &Output) -> Result<(), ProcessError> {
+    if !output.status.success() {
+        if !output.stderr.is_empty() {
+            println!(
+                "{}",
+                String::from_utf8(output.stderr.clone()).map_err(ProcessError::Decode)?
+            );
+            
+        } else {
+            println!("Stderr is empty!");
+        }
+        return Err(ProcessError::Failed(output.status));
+    }
+    Ok(())
 }
 
 fn prepare_repo(
@@ -374,20 +381,21 @@ fn prepare_repo(
     Ok(())
 }
 
-fn extract(env: &str, tag: &str) -> Result<(), FileError> {
+fn extract(name: &str, env: &str, tag: &str) -> Result<(), FileError> {
     let archives_dir = format!("{}/archives", TMP_DIR);
     let env_tag = env_tag_name(env, tag);
-    let archive_name = format!("{}.tar.gz", &env_tag);
+    let name_env_tag = format!("{}_{}", name, &env_tag);
+    let archive_name = format!("{}.tar.gz", &name_env_tag);
 
     let archive_loc = format!("{}/{}", &archives_dir, &archive_name);
-    let target_dir = format!("{}/{}", TMP_DIR, env_tag);
+    let target_dir = format!("{}/{}", TMP_DIR, &name_env_tag);
     let target_path = Path::new(&target_dir);
 
     if target_path.exists() {
         fs::remove_dir_all(target_path)?;
     }
-
-    make_tmp_dir()?;
+    
+    fs::create_dir_all(target_path)?;
 
     let mut tar_prog = Cmd::new("tar");
 
@@ -397,12 +405,14 @@ fn extract(env: &str, tag: &str) -> Result<(), FileError> {
         .arg(archive_loc)
         .current_dir(TMP_DIR)
         .arg("-C")
-        .arg(env_tag)
+        .arg(name_env_tag)
         .arg("--strip-components")
         .arg("1");
 
-    tar_prog.output()?;
+    let output = tar_prog.output()?;
 
+    output_check_success(&output)?;
+    
     println!("Extracted archive {}.", archive_name);
 
     Ok(())
@@ -470,6 +480,7 @@ fn get_repo(repo_arg: String) -> Result<GitRepo, RepoParseError> {
     } else {
         repo_val
     };
+    println!("url {}", &url);
     let split_parts: Vec<&str> = url.split('/').collect();
     let last_part = *split_parts
         .last()
@@ -482,23 +493,11 @@ fn get_repo(repo_arg: String) -> Result<GitRepo, RepoParseError> {
     Ok(GitRepo { name, url })
 }
 
-#[derive(ThisError, Debug)]
-enum AuthError {
-    #[error("Failed to get name from repo!")]
-    RepoParse(#[from] RepoParseError),
-    #[error("Failed to get password from prompt!")]
-    Prompt(#[from] IOError),
-    #[error("No password saved.")]
-    NoPassword,
-    #[error("Internal keyring failure.")]
-    Keyring(#[from] KeyringError),
-}
-
 fn auth_command(stage: Stage, repo: String) -> Result<(), AuthError> {
     let git_repo = get_repo(repo)?;
     let password = prompt_password("Enter password:\n")?;
     set_password(&password, &git_repo.name, stage.to_string())?;
-    Ok(println!("Set password!"))
+    Ok(println!("Set password for stage {} and repo {}!", &stage.to_string(), &git_repo.name))
 }
 
 fn download_command(
@@ -517,8 +516,8 @@ fn download_command(
     let use_dir = format!("{}/deploy/use", &repo_loc);
 
     prepare_repo(&git_repo.name, &git_repo.url, env_str, &tag, git_ref, true)?;
-    make_archive(&use_dir, env_str, env_str, &tag)?;
-    extract(env_str, &tag)?;
+    make_archive(&use_dir, env_str, &git_repo.name, env_str, &tag)?;
+    extract(&git_repo.name, env_str, &tag)?;
 
     Ok(())
 }
@@ -562,15 +561,15 @@ fn deploy_command(
     if new_archive {
         println!("Creating new archive...");
         prepare_repo(&name, &repo_url, env_str, &tag, git_ref, latest)?;
-        make_archive(&use_dir, env_str, env_str, &tag)?;
+        make_archive(&use_dir, env_str, &name, env_str, &tag)?;
     }
 
-    extract(env_str, &tag)?;
+    extract(&name, env_str, &tag)?;
 
     let loc_str = location(&name, env_str, &tag);
 
     let config_path = format!("{}/{}", &loc_str, "tidploy.toml");
-    let mut dploy_config = load_dploy_config(&config_path);
+    let mut dploy_config = load_dploy_config(&config_path)?;
 
     // in this case we are on the latest commit, but we need to go back to the correct commit of the latest release
     if latest && new_archive {
@@ -583,17 +582,17 @@ fn deploy_command(
             Some(dploy_config.latest_ref()),
             true,
         )?;
-        make_archive(&use_dir, env_str, env_str, &tag)?;
+        make_archive(&use_dir, env_str, &name, env_str, &tag)?;
         // Reload config
-        extract(env_str, &tag)?;
-        dploy_config = load_dploy_config(&config_path);
+        extract(&name, env_str, &tag)?;
+        dploy_config = load_dploy_config(&config_path)?;
     }
 
     println!("Running deploy.");
 
     let maybe_password = match get_password_env(env, &name, Stage::Deploy) {
         Err(AuthError::NoPassword) => {
-            println!("Set password using `tidploy auth`!");
+            println!("No password found for stage {} and repo URL {}. Set password using `tidploy auth`!", "deploy", &repo_url);
             return Ok(());
         }
         other => other,
@@ -611,17 +610,7 @@ fn deploy_command(
                 .arg(&id);
         let output = run_secrets.output().map_err(ProcessError::IO)?;
 
-        if !output.status.success() {
-            if !output.stderr.is_empty() {
-                println!(
-                    "{}",
-                    String::from_utf8(output.stderr).map_err(ProcessError::Decode)?
-                );
-            } else {
-                println!("Error loading secrets: {:?}!", output.status)
-            }
-            return Err(DeployError::Secrets);
-        }
+        output_check_success(&output)?;
 
         let secrets_output = String::from_utf8(output.stdout).map_err(ProcessError::Decode)?;
 
