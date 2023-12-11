@@ -93,7 +93,7 @@ enum Commands {
 
         /// Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. 
         /// Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
-        #[arg(short, long, default_value = "default_tidploy_git_root")]
+        #[arg(short, long, default_value = "default_git_root_origin")]
         repo: String,
 
         /// Whether to get the latest version of the ref (default: true)
@@ -112,7 +112,7 @@ enum Commands {
 
         /// Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. 
         /// Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
-        #[arg(short, long, default_value = "default_tidploy_git_root")]
+        #[arg(short, long, default_value = "default_git_root_origin")]
         repo: String,
     },
 }
@@ -463,10 +463,10 @@ fn git_root_origin_url() -> Result<String, GitError> {
 }
 
 fn get_repo(repo_arg: String) -> Result<GitRepo, RepoParseError> {
-    let repo_val = if repo_arg == "default_tidploy_git_root" {
+    let repo_val = if repo_arg == "default_git_root_origin" {
         match env::var("TI_DPLOY_REPO_URL") {
             Ok(repo_var) => repo_var,
-            Err(env::VarError::NotPresent) => "tidploy_git_root".to_owned(),
+            Err(env::VarError::NotPresent) => "git_root_origin".to_owned(),
             Err(env::VarError::NotUnicode(env_str)) => {
                 return Err(RepoParseError::BadEnvVar(env_str))
             }
@@ -475,7 +475,7 @@ fn get_repo(repo_arg: String) -> Result<GitRepo, RepoParseError> {
         repo_arg
     };
 
-    let url = if repo_val == "tidploy_git_root" {
+    let url = if repo_val == "git_root_origin" {
         git_root_origin_url()?
     } else {
         repo_val
