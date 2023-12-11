@@ -20,7 +20,7 @@ jobs:
           # (optional) Path to changelog.
           changelog: CHANGELOG.md
           # (required) GitHub token for creating GitHub Releases.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ github.token }}
 
   upload-assets:
     needs: create-release
@@ -31,6 +31,6 @@ jobs:
         with:
           # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
           # Note that glob pattern is not supported yet.
-          bin: ...
+          bin: tidploy
           # (required) GitHub token for uploading assets to GitHub Releases.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ github.token }}

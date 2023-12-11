@@ -6,6 +6,7 @@ license-file="LICENSE"
 authors=["Tip ten Brink"]
 description="Simple deployment tool for deploying small deploy units and loading secrets"
 repository="https://github.com/tiptenbrink/tidploy"
+readme="README.md"
 
 [dependencies]
 clap = { version = "4.4.10", features = ["derive"] }

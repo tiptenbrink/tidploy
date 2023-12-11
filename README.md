@@ -1,4 +1,4 @@
-This CLI tool is designed to make it easy to deploy a Docker Compose application (althoug)
+This CLI tool is designed to make it easy to deploy a Docker Compose application.
 
 ## Help
 ```
@@ -22,7 +22,7 @@ Options:
 ```
 Download tag or version with specific env
 
-Usage: tidploy download <ENV> [GIT_REF]
+Usage: tidploy download [OPTIONS] <ENV> [GIT_REF]
 
 Arguments:
   <ENV>
@@ -37,6 +37,11 @@ Arguments:
           Version or tag to download
 
 Options:
+  -r, --repo <REPO>
+          Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
+          
+          [default: default_git_root_origin]
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -47,13 +52,16 @@ Options:
 ```
 Save authentication details for specific stage until reboot
 
-Usage: tidploy auth <STAGE>
+Usage: tidploy auth <STAGE> [REPO]
 
 Arguments:
   <STAGE>
           Possible values:
           - download: Download stage
           - deploy:   Deploy stage
+
+  [REPO]
+          [default: default]
 
 Options:
   -h, --help
@@ -81,10 +89,15 @@ Arguments:
           Version or tag to deploy. Omit to deploy latest for env
 
 Options:
+  -r, --repo <REPO>
+          Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
+          
+          [default: default_tidploy_git_root]
+
   -l, --latest
           Whether to get the latest version of the ref (default: true)
 
-  -r, --recreate
+  -c, --recreate
           Whether to recreate the database (default: false)
 
   -h, --help

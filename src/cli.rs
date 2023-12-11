@@ -76,7 +76,7 @@ enum Commands {
         /// Version or tag to download
         git_ref: Option<String>,
 
-        /// Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set
+        /// Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. 
         /// Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
         #[arg(short, long, default_value = "default_git_root_origin")]
         repo: String,
@@ -91,6 +91,8 @@ enum Commands {
         /// Version or tag to deploy. Omit to deploy latest for env
         git_ref: Option<String>,
 
+        /// Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. 
+        /// Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
         #[arg(short, long, default_value = "default_tidploy_git_root")]
         repo: String,
 
@@ -99,7 +101,7 @@ enum Commands {
         latest_opt: bool,
 
         /// Whether to recreate the database (default: false)
-        #[arg(short, long, default_value_t = false)]
+        #[arg(short = 'c', long, default_value_t = false)]
         recreate: bool,
     },
 
