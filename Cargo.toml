@@ -8,7 +8,6 @@ description="Simple deployment tool for deploying small deploy units and loading
 repository="https://github.com/tiptenbrink/tidploy"
 
 [dependencies]
-anyhow = "1.0.75"
 clap = { version = "4.4.10", features = ["derive"] }
 keyring = { version = "2.1.0", default-features = false, features=[ "linux-no-secret-service" ] }
 rpassword = "7.3.1"
