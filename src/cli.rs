@@ -480,7 +480,7 @@ fn get_repo(repo_arg: String) -> Result<GitRepo, RepoParseError> {
     } else {
         repo_val
     };
-    println!("url {}", &url);
+
     let split_parts: Vec<&str> = url.split('/').collect();
     let last_part = *split_parts
         .last()
