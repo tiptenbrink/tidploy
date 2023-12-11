@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0 2023-12-12
+
+* Add support for dployer, which allows secret loading to also be handled externally by using named pipe communication with Docker containers
+
 ## 0.7.0 2023-12-11
 
 * Set default repo to default_git_root_origin and check for git_root_origin in order to read URL from current repo

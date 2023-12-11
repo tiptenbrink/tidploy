@@ -3,7 +3,6 @@ def secret_to_pipe [secret: string, pipe: string] {
     let j = bws secret get $secret | from json
     let k = $j | get key
     let v = $j | get value
-    print $k
     echo $"\n($k)=($v)" | save $pipe --append
 }
 

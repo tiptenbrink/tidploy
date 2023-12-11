@@ -1,6 +1,50 @@
-This CLI tool is designed to make it easy to deploy a Docker Compose application.
+This CLI tool is designed to make it easy to deploy small applications.
+
+Only works on Linux. 
+
+## Deploy unit example
+
+### tidploy.json
+
+```jsonc
+{
+    # optional, defaults to false
+    "dployer": true,
+    "info": {
+        "latest": "main"
+    },
+    "secrets": {
+        # required if dployer set to true, otherwise optional
+        "dployer_env": "BWS_ACCESS_TOKEN",
+        "ids": [
+            "<secret id>",
+            "<secret id>",
+        ]
+    }
+}
+
+```
+
+### With dployer
+
+**Required files**
+
+* dployer.sh
+* tidploy.json/toml
+
+The password set for the `deploy` stage is passed as an environment variable with key equal to `secrets.deployer_env`.
+
+### With Bitwarden Secrets Manager integration
+
+**Required files**
+
+* entrypoint.sh
+* tidploy.json/toml
+
+If dployer is not specified, it is assumed that the set password for the `deploy` stage is the `BWS_ACCESS_TOKEN`. Secrets in `secrets.ids` will be loaded and passed to the `entrypoint.sh` as environment variables.
 
 ## Help
+
 ```
 Simple deployment tool for deploying small deploy units and loading secrets
 
@@ -38,7 +82,7 @@ Arguments:
 
 Options:
   -r, --repo <REPO>
-          Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
+          Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
           
           [default: default_git_root_origin]
 
@@ -52,7 +96,7 @@ Options:
 ```
 Save authentication details for specific stage until reboot
 
-Usage: tidploy auth <STAGE> [REPO]
+Usage: tidploy auth [OPTIONS] <STAGE>
 
 Arguments:
   <STAGE>
@@ -60,10 +104,12 @@ Arguments:
           - download: Download stage
           - deploy:   Deploy stage
 
-  [REPO]
-          [default: default]
-
 Options:
+  -r, --repo <REPO>
+          Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
+          
+          [default: default_git_root_origin]
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -92,7 +138,7 @@ Options:
   -r, --repo <REPO>
           Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
           
-          [default: default_tidploy_git_root]
+          [default: default_git_root_origin]
 
   -l, --latest
           Whether to get the latest version of the ref (default: true)
