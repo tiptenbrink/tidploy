@@ -45,7 +45,7 @@ If dployer is not specified, it is assumed that the set password for the `deploy
 
 ## Help
 
-```
+```text
 Simple deployment tool for deploying small deploy units and loading secrets
 
 Usage: tidploy <COMMAND>
@@ -63,7 +63,7 @@ Options:
 
 ### Download
 
-```
+```text
 Download tag or version with specific env
 
 Usage: tidploy download [OPTIONS] <ENV> [GIT_REF]
@@ -93,7 +93,7 @@ Options:
 
 ### Auth
 
-```
+```text
 Save authentication details for specific stage until reboot
 
 Usage: tidploy auth [OPTIONS] <STAGE>
@@ -117,7 +117,7 @@ Options:
 
 ### Deploy
 
-```
+```text
 Deploy tag or version with specific env
 
 Usage: tidploy deploy [OPTIONS] <ENV> [GIT_REF]

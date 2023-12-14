@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0 2023-12-14
+
+* dployer is the default option now, dployer_env renamed to env_var and new "run" subcommand
+
 ## 0.8.0 2023-12-12
 
 * Add support for dployer, which allows secret loading to also be handled externally by using named pipe communication with Docker containers

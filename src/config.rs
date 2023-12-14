@@ -5,21 +5,22 @@ use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 pub(crate) enum ConfigError {
-    #[error("Failure during download dealing with files!")]
+    #[error("Failure with files during config! {0}")]
     File(#[from] FileError),
-    #[error("Failed to parse config TOML!")]
+    #[error("Failed to parse config TOML! {0}")]
     TOMLDecode(#[from] toml::de::Error),
-    #[error("Failed to parse config JSON!")]
+    #[error("Failed to parse config JSON! {0}")]
     JSONDecode(#[from] serde_json::Error),
-    #[error("dployer_env only available when dployer is set")]
-    EnvNotDployer
+    #[error("env_var must be set if using run or running dployer!")]
+    NoEnvVar,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct DployConfig {
     secrets: DploySecrets,
     info: DployInfo,
-    dployer: Option<bool>
+    dployer: Option<bool>,
+    entrypoint: Option<String>
 }
 
 impl DployConfig {
@@ -32,15 +33,17 @@ impl DployConfig {
     }
 
     pub(crate) fn uses_dployer(&self) -> bool {
-        self.dployer.clone().unwrap_or(false)
+        self.dployer.clone().unwrap_or(true)
     }
 
-    pub(crate) fn get_dployer_env(&self) -> Result<Option<String>, ConfigError> {
-        if !self.uses_dployer() {
-            return Err(ConfigError::EnvNotDployer)
-        }
+    pub(crate) fn get_entrypoint(&self) -> String {
+        let default = if self.uses_dployer() { "dployer.sh" } else { "entrypoint.sh" };
 
-        Ok(self.secrets.dployer_env.clone())
+        self.entrypoint.clone().unwrap_or(default.to_owned())
+    }
+
+    pub(crate) fn get_env_var(&self) -> Option<String> {
+        self.secrets.env_var.clone()
     }
 }
 
@@ -52,11 +55,11 @@ struct DployInfo {
 #[derive(Deserialize)]
 struct DploySecrets {
     ids: Vec<String>,
-    dployer_env: Option<String>
+    env_var: Option<String>,
 }
 
-pub(crate) fn load_dploy_config(file_path_dir: &str) -> Result<DployConfig, ConfigError> {
-    let dir_path = Path::new(file_path_dir);
+pub(crate) fn load_dploy_config<P: AsRef<Path>>(file_path_dir: P) -> Result<DployConfig, ConfigError> {
+    let dir_path = file_path_dir.as_ref();
     let toml_path = dir_path.join("tidploy.toml");
     let json_path = dir_path.join("tidploy.json");
     let choose_json = json_path.exists();
