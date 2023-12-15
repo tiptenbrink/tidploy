@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.1 2023-12-15
+
+* Upload changelog.
+
+## 0.11.0 2023-12-15
+
+* Deploy and run function added back in. Not compatible with previous versions. 
+
 ## 0.10.0 2023-12-15
 
 * Most features have been temporarily removed during the refactor. Use v0.9.0 if they are needed. This release contains:
