@@ -121,7 +121,7 @@ pub(crate) enum RepoError {
     #[error("Cannot create repository if network is disabled!")]
     NeedsNetwork,
     #[error("Cannot checkout if repository has not been created!")]
-    NotCreated
+    NotCreated,
 }
 
 impl RepoError {

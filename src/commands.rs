@@ -5,7 +5,6 @@ use crate::auth::{auth_command, AuthError};
 use crate::errors::{ProcessError, RepoError};
 use crate::git::{checkout, checkout_path, repo_clone};
 
-
 use crate::process::run_entrypoint;
 use crate::state::{
     create_state_create, create_state_run, CliEnvState, LoadError, State, StateContext,
@@ -110,7 +109,6 @@ fn download_command(
     state: State,
     repo_only: bool,
 ) -> Result<Option<State>, ErrorRepr> {
-    //println!("{:?}", state);
     let repo_path = create_repo(state).map_err(ErrorRepr::Repo)?;
 
     if repo_only {
@@ -119,10 +117,8 @@ fn download_command(
 
     let state =
         create_state_create(cli_state.clone(), Some(&repo_path), true).map_err(ErrorRepr::Load)?;
-    //println!("{:?}", state);
-    checkout(&repo_path, &state.commit_sha).map_err(ErrorRepr::Repo)?;
 
-    //println!("{:?}", state);
+    checkout(&repo_path, &state.commit_sha).map_err(ErrorRepr::Repo)?;
 
     checkout_path(&repo_path, &state.deploy_path).map_err(ErrorRepr::Repo)?;
 
@@ -130,10 +126,6 @@ fn download_command(
 
     let state =
         create_state_create(cli_state, Some(&deploy_path), true).map_err(ErrorRepr::Load)?;
-
-    //println!("{:?}", state);
-
-    //println!("time {}", now.elapsed().as_secs_f64());
 
     let tmp_dir = Path::new(TMP_DIR);
     let archives = tmp_dir.join("archives");
@@ -174,8 +166,6 @@ pub(crate) fn run_cli() -> Result<(), Error> {
 
     let args = Cli::parse();
 
-    //println!("{:?}", args);
-
     let cli_state = CliEnvState {
         context: args.context,
         network: args.network,
@@ -187,8 +177,6 @@ pub(crate) fn run_cli() -> Result<(), Error> {
     match args.command {
         Commands::Auth { key } => {
             let state = create_state_create(cli_state, None, false).map_err(ErrorRepr::Load)?;
-            //println!("{:?}", state);
-            //println!("time {}", now.elapsed().as_secs_f64());
 
             auth_command(&state, key).map_err(ErrorRepr::Auth)?;
 
@@ -231,7 +219,6 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             .map_err(ErrorRepr::Load)?;
 
             let state = extra_envs(state);
-            //println!("{:?}", state);
 
             run_entrypoint(state.current_dir, &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;
@@ -263,10 +250,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             let state = create_state_run(cli_state, Some(executable), variables, path_ref, true)
                 .map_err(ErrorRepr::Load)?;
 
-            //println!("time {}", now.elapsed().as_secs_f64());
-
             let state = extra_envs(state);
-            //println!("{:?}", state);
 
             run_entrypoint(state.current_dir, &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;

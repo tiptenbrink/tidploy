@@ -4,8 +4,7 @@ use crate::process::process_out;
 use std::fs;
 
 use std::path::{Path, PathBuf};
-use std::process::{Command as Cmd};
-
+use std::process::Command as Cmd;
 
 pub(crate) fn make_archive(
     archives_path: &Path,
