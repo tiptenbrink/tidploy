@@ -1,65 +1,57 @@
-
-use crate::commands::{DEFAULT, DEFAULT_INFER};
-use crate::config::{load_dploy_config, DployConfig, traverse_configs, ConfigError};
-use crate::errors::{GitError, ProcessError, RelPathError};
-use crate::filesystem::{FileError, get_current_dir};
-use crate::git::{git_root_origin_url, relative_to_git_root, RepoParseError, Repo, parse_repo_url};
-use crate::secret_store::{get_password, set_password};
-use crate::secrets::SecretOutput;
-use clap::{Parser, Subcommand, ValueEnum};
-use keyring::Error as KeyringError;
-use rpassword::prompt_password;
-use spinoff::{spinners, Spinner};
-use std::env::VarError;
-use std::ffi::OsString;
-use std::fs::{self};
-use std::path::PathBuf;
-use std::process::Output;
-use std::{
-    collections::HashMap,
-    env,
-    io::BufRead,
-    io::BufReader,
-    io::Error as IOError,
-    path::Path,
-    process::{Command as Cmd, Stdio},
+use crate::auth::{auth_get_password, AuthError};
+use crate::commands::{DEFAULT, DEFAULT_INFER, TIDPLOY_DEFAULT};
+use crate::config::{
+    load_dploy_config, merge_vars, traverse_configs, ConfigError, ConfigVar, DployConfig,
 };
-use thiserror::Error as ThisError;
+use crate::errors::{GitError, RelPathError};
+use crate::filesystem::{get_current_dir, FileError};
+use crate::git::{
+    git_root_origin_url, parse_repo_url, relative_to_git_root, rev_parse_tag, Repo, RepoParseError,
+};
+
+use clap::ValueEnum;
+
 use relative_path::RelativePathBuf;
+
+use std::env::VarError;
+
+use std::path::PathBuf;
+use std::{collections::HashMap, env};
+use thiserror::Error as ThisError;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub(crate) enum StateContext {
     None,
-    Git
+    Git,
 }
 
 impl StateContext {
-    fn as_str(&self) -> &'static str {
-        match self {
-            StateContext::None => "none",
-            StateContext::Git => "git"
-        }
-    }
+    // fn as_str(&self) -> &'static str {
+    //     match self {
+    //         StateContext::None => "none",
+    //         StateContext::Git => "git",
+    //     }
+    // }
 
     fn from_str(s: &str) -> Option<StateContext> {
         match s {
             "none" => Some(StateContext::None),
             "git" => Some(StateContext::Git),
-            _ => None
+            _ => None,
         }
     }
 }
 
-
-
-struct State {
-    network: bool,
-    context: StateContext,
-    repo: Repo,
-    deploy_dir: RelativePathBuf,
-    commit_sha: String,
-    envs: HashMap<String, String>,
-    exe_name: String
+#[derive(Debug)]
+pub(crate) struct State {
+    pub(crate) network: bool,
+    pub(crate) context: StateContext,
+    pub(crate) repo: Repo,
+    pub(crate) deploy_path: RelativePathBuf,
+    pub(crate) commit_sha: String,
+    pub(crate) envs: HashMap<String, String>,
+    pub(crate) exe_name: String,
+    pub(crate) current_dir: PathBuf,
 }
 
 #[derive(Debug, ThisError)]
@@ -69,37 +61,56 @@ pub(crate) enum LoadError {
     #[error("Failure creating relative path during load! {0}")]
     RelPath(#[from] RelPathError),
     #[error("Failure to read env variable {var} as unicode during load!")]
-    VarNotUnicode {
-        var: String
-    },
+    VarNotUnicode { var: String },
     #[error("{msg}")]
-    BadValue {
-        msg: String,
-    },
+    BadValue { msg: String },
     #[error("Failure with file during load! {0}")]
     File(#[from] FileError),
     #[error("Failure loading config during load! {0}")]
     Config(#[from] ConfigError),
     #[error("Failure parsing Git url during load! {0}")]
-    RepoParse(#[from] RepoParseError)
+    RepoParse(#[from] RepoParseError),
+    #[error("Failure getting value of env! {0}")]
+    Auth(#[from] AuthError),
 }
 
-
-
-struct CliEnvState {
-    context: Option<String>,
-    no_network: Option<bool>,
-    repo_url: Option<String>,
-    deploy_path: Option<String>,
-    tag: Option<String>,
+struct CliEnvRunState {
+    envs: Vec<ConfigVar>,
+    exe_name: Option<String>,
 }
 
+pub(crate) struct CliEnvState {
+    pub(crate) context: Option<StateContext>,
+    pub(crate) network: Option<bool>,
+    pub(crate) repo_url: Option<String>,
+    pub(crate) deploy_path: Option<String>,
+    pub(crate) tag: Option<String>,
+}
 
+fn load_state_run_vars() -> CliEnvRunState {
+    let mut envs_vec = Vec::new();
+
+    let mut exe_name = None;
+
+    for (k, v) in env::vars() {
+        if k == "TIDPLOY_EXE" {
+            exe_name = Some(v)
+        } else if k.starts_with("TIDPLOY_VAR_") {
+            let env_name = k.strip_prefix("TIDPLOY_VAR_").unwrap().to_owned();
+            envs_vec.push(ConfigVar { env_name, key: v })
+        }
+    }
+
+    CliEnvRunState {
+        envs: envs_vec,
+        exe_name,
+    }
+}
 
 fn load_state_vars() -> CliEnvState {
     let mut env_state = CliEnvState {
         context: None,
-        no_network: None,
+        network: None,
         repo_url: None,
         deploy_path: None,
         tag: None,
@@ -108,97 +119,228 @@ fn load_state_vars() -> CliEnvState {
     for (k, v) in env::vars() {
         match k.as_str() {
             "TIDPLOY_REPO" => env_state.repo_url = Some(v),
-            "TIDPLOY_NETWORK" => env_state.no_network = Some(v == "0"),
+            "TIDPLOY_NETWORK" => env_state.network = Some(v != "0" && v.to_lowercase() != "false"),
             "TIDPLOY_TAG" => env_state.tag = Some(v),
-            "TIDPLOY_PTH" => env_state.deploy_path = Some(v)
+            "TIDPLOY_PTH" => env_state.deploy_path = Some(v),
+            _ => {}
         }
     }
 
     env_state
 }
 
-fn merge_options<T: Clone>(original: Option<T>, preferred: Option<T>, most_preferred: Option<T>) -> Option<T> {
+fn merge_options<T: Clone>(
+    original: Option<T>,
+    preferred: Option<T>,
+    most_preferred: Option<T>,
+) -> Option<T> {
     if most_preferred.is_some() {
-        return most_preferred.clone()
+        return most_preferred;
     }
     if preferred.is_some() {
-        return preferred.clone()
+        return preferred;
     }
-    original.clone()
+    original
 }
 
-fn merge_state(config: DployConfig, envs: CliEnvState, cli: CliEnvState) -> CliEnvState {
+fn merge_state(config: &DployConfig, envs: CliEnvState, cli: CliEnvState) -> CliEnvState {
     CliEnvState {
         // Already set
         context: None,
-        no_network: merge_options(config.network.map(|b| !b), envs.no_network, cli.no_network),
-        repo_url: merge_options(config.repo_url, envs.repo_url, cli.repo_url),
-        deploy_path: merge_options(config.deploy_path, envs.deploy_path, cli.deploy_path),
-        tag: merge_options(config.tag, envs.tag, cli.tag),
+        network: merge_options(config.network, envs.network, cli.network),
+        repo_url: merge_options(config.repo_url.clone(), envs.repo_url, cli.repo_url),
+        deploy_path: merge_options(
+            config.deploy_path.clone(),
+            envs.deploy_path,
+            cli.deploy_path,
+        ),
+        tag: merge_options(config.tag.clone(), envs.tag, cli.tag),
     }
 }
 
+fn merge_run_state(
+    config: &DployConfig,
+    envs: CliEnvRunState,
+    cli: CliEnvRunState,
+) -> CliEnvRunState {
+    let envs_overwrite_config = merge_vars(config.vars.clone(), Some(envs.envs));
+    let cli_overwrite_envs = merge_vars(envs_overwrite_config, Some(cli.envs)).unwrap();
 
+    CliEnvRunState {
+        exe_name: merge_options(config.exe_name.clone(), envs.exe_name, cli.exe_name),
+        envs: cli_overwrite_envs,
+    }
+}
 
-fn create_state(cli_state: CliEnvState) -> Result<State, LoadError> {
+fn set_state(
+    state: &mut State,
+    merged_state: CliEnvState,
+    merged_run_state: Option<CliEnvRunState>,
+    load_tag: bool,
+) -> Result<(), LoadError> {
+    let repo_url = match state.context {
+        StateContext::None => match merged_state.repo_url {
+            Some(value) if value == DEFAULT_INFER => git_root_origin_url()?, // Only infer if explicitly set to infer
+            Some(value) => value,
+            None => DEFAULT.to_owned(), // Unset here defaults to just leaving it as 'default'
+        },
+        StateContext::Git => match merged_state.repo_url {
+            Some(value) if value == DEFAULT_INFER => git_root_origin_url()?,
+            Some(value) => value,
+            None => git_root_origin_url()?,
+        },
+    };
+
+    match repo_url.as_str() {
+        DEFAULT => { /* Keep as default */ }
+        _other => state.repo = parse_repo_url(repo_url)?,
+    }
+
+    if let Some(value) = merged_state.network {
+        state.network = value
+    };
+
+    let tag = match merged_state.tag {
+        Some(value) => value,
+        None => TIDPLOY_DEFAULT.to_owned(),
+    };
+
+    if let Some(value) = merged_state.deploy_path {
+        state.deploy_path = RelativePathBuf::from_path(&value).map_err(|e| {
+            let msg = format!("Failed to get relative path for deploy path: {}!", value);
+            RelPathError::from_knd(e, msg)
+        })?
+    };
+
+    // TODO maybe infer the tag from the current folder or checked out tag
+
+    // We only want to load the tag when we've actually downloaded the target repository
+    if load_tag && tag != TIDPLOY_DEFAULT {
+        state.commit_sha = rev_parse_tag(&tag, state.network)?;
+    } else {
+        state.commit_sha = tag;
+    }
+
+    if let Some(merged_run_state) = merged_run_state {
+        for e in merged_run_state.envs {
+            let pass = auth_get_password(state, &e.key).map_err(|source| {
+                let msg = format!("Failed to get password with key {} from passwords while loading envs into state!", e.key);
+                AuthError { msg, source }
+            })?;
+
+            state.envs.insert(e.env_name, pass);
+        }
+
+        if let Some(exe_name) = merged_run_state.exe_name {
+            state.exe_name = exe_name
+        }
+
+        if state.exe_name == TIDPLOY_DEFAULT {
+            state.exe_name = "entrypoint.sh".to_owned();
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn create_state_pre(cli_state: CliEnvState) -> Result<State, LoadError> {
+    create_state(cli_state, None, false)
+}
+
+fn parse_cli_envs(envs: Vec<String>) -> Vec<ConfigVar> {
+    envs.chunks_exact(2)
+        .map(|c| ConfigVar {
+            key: c.get(0).unwrap().to_owned(),
+            env_name: c.get(1).unwrap().to_owned(),
+        })
+        .collect()
+}
+
+pub(crate) fn create_state_run(
+    cli_state: CliEnvState,
+    exe_name: Option<String>,
+    envs: Vec<String>,
+    load_tag: bool,
+) -> Result<State, LoadError> {
+    let cli_run_state = CliEnvRunState {
+        exe_name,
+        envs: parse_cli_envs(envs),
+    };
+    create_state(cli_state, Some(cli_run_state), load_tag)
+}
+
+fn create_state(
+    cli_state: CliEnvState,
+    cli_run_state: Option<CliEnvRunState>,
+    load_tag: bool,
+) -> Result<State, LoadError> {
     let mut state = State {
         network: true,
         context: StateContext::Git,
         repo: Repo {
             name: DEFAULT.to_owned(),
             url: "".to_owned(),
-            encoded_url: "".to_owned()
+            encoded_url: "".to_owned(),
         },
-        deploy_dir: RelativePathBuf::new(),
-        commit_sha: DEFAULT.to_owned(),
+        deploy_path: RelativePathBuf::new(),
+        commit_sha: TIDPLOY_DEFAULT.to_owned(),
         envs: HashMap::<String, String>::new(),
-        exe_name: DEFAULT.to_owned()
+        exe_name: TIDPLOY_DEFAULT.to_owned(),
+        current_dir: PathBuf::new(),
     };
 
     let env_state = load_state_vars();
+    let env_run_state = if cli_run_state.is_some() {
+        Some(load_state_run_vars())
+    } else {
+        None
+    };
 
     state.context = match cli_state.context {
         None => match env::var("TIDPLOY_CONTEXT") {
-            Ok(val) => StateContext::from_str(&val).ok_or(LoadError::BadValue { msg: "Environment value TIDPLOY_CONTEXT is not one of \"none\" or \"git\"!".to_owned() })?,
-            Err(VarError::NotUnicode(_)) => return Err(LoadError::VarNotUnicode { var: "TIDPLOY_CONTEXT".to_owned() }),
-            _ => StateContext::Git
+            Ok(val) => StateContext::from_str(&val).ok_or(LoadError::BadValue {
+                msg: "Environment value TIDPLOY_CONTEXT is not one of \"none\" or \"git\"!"
+                    .to_owned(),
+            })?,
+            Err(VarError::NotUnicode(_)) => {
+                return Err(LoadError::VarNotUnicode {
+                    var: "TIDPLOY_CONTEXT".to_owned(),
+                })
+            }
+            _ => StateContext::Git,
         },
-        Some(cli_context) => StateContext::from_str(&cli_context).ok_or(LoadError::BadValue { msg: "Argument for context is not one of \"none\" or \"git\"!".to_owned() })?,
+        Some(cli_context) => cli_context,
     };
 
     //let state_env_vars = load_state_vars()?;
-    let current_dir = get_current_dir().map_err(|source| FileError { source, msg: "Failed to get current dir to use for loading configs!".to_owned() })?;
-    match state.context {
+    state.current_dir = get_current_dir().map_err(|source| FileError {
+        source,
+        msg: "Failed to get current dir to use for loading configs!".to_owned(),
+    })?;
+    let dploy_config = match state.context {
         StateContext::Git => {
             let git_root_relative = relative_to_git_root()?;
-            let git_root_relative = RelativePathBuf::from_path(&git_root_relative).unwrap();
-            let dploy_config = traverse_configs(current_dir, git_root_relative)?;
-            
-            let merged_state = merge_state(dploy_config, env_state, cli_state);
-
-            let repo_url = match merged_state.repo_url {
-                Some(value) if value == DEFAULT_INFER => git_root_origin_url()?,
-                Some(value) => value,
-                None => git_root_origin_url()?
-            };
-
-            match repo_url.as_str() {
-                DEFAULT => { /* Keep as default */ },
-                other => state.repo = parse_repo_url(repo_url)?
-            }
-
-            
-
-
-            Ok()
-        },
-        StateContext::None => {
-            let dploy_config = load_dploy_config(current_dir)
-                .map_err(|source| ConfigError { source, msg: "Failed to load config of current dir when loading with context none!".to_owned()})?;
-
-            let merged_state = merge_state(dploy_config, env_state, cli_state);
-
-            Ok()
+            let git_root_relative = RelativePathBuf::from_path(git_root_relative).unwrap();
+            traverse_configs(state.current_dir.clone(), git_root_relative)?
         }
+        StateContext::None => {
+            load_dploy_config(state.current_dir.clone()).map_err(|source| ConfigError {
+                source,
+                msg: "Failed to load config of current dir when loading with context none!"
+                    .to_owned(),
+            })?
+        }
+    };
+
+    let merged_state = merge_state(&dploy_config, env_state, cli_state);
+
+    if let Some(cli_run_state) = cli_run_state {
+        let merged_run_state =
+            merge_run_state(&dploy_config, cli_run_state, env_run_state.unwrap());
+        set_state(&mut state, merged_state, Some(merged_run_state), load_tag)?;
+    } else {
+        set_state(&mut state, merged_state, None, load_tag)?;
     }
+
+    Ok(state)
 }

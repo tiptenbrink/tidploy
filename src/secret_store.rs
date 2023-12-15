@@ -1,8 +1,7 @@
-use keyring::{Entry, Error::NoEntry, Result as KeyringResult};
+use keyring::{Entry, Error::NoEntry, Result};
 
-pub(crate) fn get_password(name: &str, stage: &str) -> KeyringResult<Option<String>> {
-    let user = format!("{}_{}", name, stage);
-    let entry = Entry::new("ti_dploy", &user)?;
+pub(crate) fn get_password(key: &str) -> Result<Option<String>> {
+    let entry = Entry::new("ti_dploy", key)?;
     match entry.get_password() {
         Ok(pw) => Ok(Some(pw)),
         Err(NoEntry) => Ok(None),
@@ -10,9 +9,8 @@ pub(crate) fn get_password(name: &str, stage: &str) -> KeyringResult<Option<Stri
     }
 }
 
-pub(crate) fn set_password(password: &str, name: &str, stage: &str) -> KeyringResult<()> {
-    let user = format!("{}_{}", name, stage);
-    let entry = Entry::new("ti_dploy", &user)?;
+pub(crate) fn set_password(password: &str, key: &str) -> Result<()> {
+    let entry = Entry::new("ti_dploy", key)?;
     entry.set_password(password)?;
     Ok(())
 }
