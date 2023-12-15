@@ -586,6 +586,7 @@ fn run_entrypoint<P: AsRef<Path>>(
     entrypoint: &str,
     envs: HashMap<String, String>,
 ) -> Result<(), ProcessError> {
+    println!("Running {}!", &entrypoint);
     let program_path = entrypoint_dir.as_ref().join(entrypoint);
     let mut entrypoint_output = Cmd::new(program_path)
         .current_dir(&entrypoint_dir)
