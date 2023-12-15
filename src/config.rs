@@ -26,7 +26,7 @@ pub(crate) enum ConfigErrorKind {
     JSONDecode(#[from] serde_json::Error),
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub(crate) struct DployConfig {
     pub(crate) network: Option<bool>,
     pub(crate) repo_url: Option<String>,
@@ -36,35 +36,11 @@ pub(crate) struct DployConfig {
     pub(crate) exe_name: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub(crate) struct ConfigVar {
     pub(crate) key: String,
     pub(crate) env_name: String,
 }
-
-// impl DployConfig {
-//     pub(crate) fn get_secrets(&self) -> Vec<String> {
-//         self.secrets.ids.clone()
-//     }
-
-//     pub(crate) fn latest_ref(&self) -> String {
-//         self.info.latest.clone()
-//     }
-
-//     pub(crate) fn uses_dployer(&self) -> bool {
-//         self.dployer.clone().unwrap_or(true)
-//     }
-
-//     pub(crate) fn get_entrypoint(&self) -> String {
-//         let default = if self.uses_dployer() { "dployer.sh" } else { "entrypoint.sh" };
-
-//         self.entrypoint.clone().unwrap_or(default.to_owned())
-//     }
-
-//     pub(crate) fn get_env_var(&self) -> Option<String> {
-//         self.secrets.env_var.clone()
-//     }
-// }
 
 pub(crate) fn load_dploy_config<P: AsRef<Path>>(
     file_path_dir: P,

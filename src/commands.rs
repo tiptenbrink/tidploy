@@ -57,16 +57,16 @@ enum Commands {
 
     /// Deploy tag or version with specific env
     Deploy {
-        #[arg(short = 'x', long = "exe", default_value = "_tidploy_default")]
-        executable: String,
+        #[arg(short = 'x', long = "exe")]
+        executable: Option<String>,
 
         #[arg(short, num_args = 2)]
         variables: Vec<String>,
     },
     /// Run an entrypoint using the password set for a specific repo and stage 'deploy', can be used after download
     Run {
-        #[arg(short = 'x', long = "exe", default_value = "_tidploy_default")]
-        executable: String,
+        #[arg(short = 'x', long = "exe")]
+        executable: Option<String>,
 
         #[arg(short, num_args = 2)]
         variables: Vec<String>,
@@ -211,7 +211,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             let target_path = state.deploy_path.to_path(target_path_root);
             let state = create_state_run(
                 cli_state,
-                Some(executable),
+                executable,
                 variables,
                 Some(&target_path),
                 true,
@@ -247,7 +247,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
 
             let path_ref = path.as_deref();
 
-            let state = create_state_run(cli_state, Some(executable), variables, path_ref, true)
+            let state = create_state_run(cli_state, executable, variables, path_ref, true)
                 .map_err(ErrorRepr::Load)?;
 
             let state = extra_envs(state);

@@ -38,7 +38,6 @@ pub(crate) fn auth_command(state: &State, key: String) -> Result<(), AuthError> 
         "{}:{}/{}/{}",
         key, state.repo.name, path_str, state.commit_sha
     );
-    println!("{}", key);
     set_password(&password, &store_key).map_err(|e| {
         let msg = format!(
             "Could not set password in auth command with store_key {}!",

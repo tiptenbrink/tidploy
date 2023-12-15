@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.2 2023-12-15
+
+* Fix exe name being overwritten by default value from CLI. Fix run state precedence.
+
 ## 0.11.1 2023-12-15
 
 * Upload changelog.

@@ -357,7 +357,7 @@ fn create_state(
 
     if let Some(cli_run_state) = cli_run_state {
         let merged_run_state =
-            merge_run_state(&dploy_config, cli_run_state, env_run_state.unwrap());
+            merge_run_state(&dploy_config, env_run_state.unwrap(), cli_run_state);
         set_state(&mut state, merged_state, Some(merged_run_state), load_tag)?;
     } else {
         set_state(&mut state, merged_state, None, load_tag)?;
