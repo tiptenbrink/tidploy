@@ -4,6 +4,8 @@ use std::process::ExitStatus;
 use std::string::FromUtf8Error;
 use thiserror::Error as ThisError;
 
+use crate::filesystem::FileError;
+
 #[derive(ThisError, Debug)]
 #[error("{msg} {source}")]
 struct IOError {
@@ -34,6 +36,30 @@ pub(crate) enum ProcessErrorKind {
 pub(crate) enum GitError {
     #[error("External Git process failed: {0}")]
     Process(#[from] ProcessError),
+}
+
+#[derive(Debug, ThisError)]
+pub(crate) enum TarError {
+    #[error("External tar process failed: {0}")]
+    Process(#[from] ProcessError),
+}
+
+impl TarError {
+    pub(crate) fn from_io(e: StdIOError, msg: String) -> TarError {
+        ProcessError {
+            msg,
+            source: ProcessErrorKind::IO(e),
+        }
+        .into()
+    }
+
+    pub(crate) fn from_f(f: ExitStatus, msg: String) -> TarError {
+        ProcessError {
+            msg,
+            source: ProcessErrorKind::Failed(f),
+        }
+        .into()
+    }
 }
 
 impl GitError {
@@ -82,4 +108,28 @@ impl RelPathError {
 pub(crate) enum RelPathErrorKind {
     #[error(transparent)]
     FromPath(#[from] FromPathError),
+}
+
+#[derive(Debug, ThisError)]
+pub(crate) enum RepoError {
+    #[error("Failure during repo process dealing with files! {0}")]
+    File(#[from] FileError),
+    #[error("Failure during repo process dealing with tar! {0}")]
+    Tar(#[from] TarError),
+    #[error("Failure during repo process dealing with Git! {0}")]
+    Git(#[from] GitError),
+    #[error("Cannot create repository if network is disabled!")]
+    NeedsNetwork,
+    #[error("Cannot checkout if repository has not been created!")]
+    NotCreated
+}
+
+impl RepoError {
+    pub(crate) fn from_io(e: std::io::Error, msg: String) -> RepoError {
+        FileError {
+            source: e.into(),
+            msg,
+        }
+        .into()
+    }
 }

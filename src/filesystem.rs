@@ -10,10 +10,12 @@ pub(crate) struct FileError {
 
 #[derive(Debug, ThisError)]
 pub(crate) enum FileErrorKind {
-    #[error("IO error reading current dir! {0}")]
-    NoCurrentDir(#[from] StdIOError),
+    #[error("IO error dealing with filesystem! {0}")]
+    IO(#[from] StdIOError),
+    #[error("Path cannot be converted to a string!")]
+    InvalidPath,
 }
 
 pub(crate) fn get_current_dir() -> Result<PathBuf, FileErrorKind> {
-    env::current_dir().map_err(FileErrorKind::NoCurrentDir)
+    env::current_dir().map_err(FileErrorKind::IO)
 }

@@ -15,7 +15,7 @@ use relative_path::RelativePathBuf;
 
 use std::env::VarError;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{collections::HashMap, env};
 use thiserror::Error as ThisError;
 
@@ -48,6 +48,7 @@ pub(crate) struct State {
     pub(crate) context: StateContext,
     pub(crate) repo: Repo,
     pub(crate) deploy_path: RelativePathBuf,
+    pub(crate) tag: String,
     pub(crate) commit_sha: String,
     pub(crate) envs: HashMap<String, String>,
     pub(crate) exe_name: String,
@@ -79,6 +80,7 @@ struct CliEnvRunState {
     exe_name: Option<String>,
 }
 
+#[derive(Clone)]
 pub(crate) struct CliEnvState {
     pub(crate) context: Option<StateContext>,
     pub(crate) network: Option<bool>,
@@ -180,14 +182,14 @@ fn set_state(
 ) -> Result<(), LoadError> {
     let repo_url = match state.context {
         StateContext::None => match merged_state.repo_url {
-            Some(value) if value == DEFAULT_INFER => git_root_origin_url()?, // Only infer if explicitly set to infer
+            Some(value) if value == DEFAULT_INFER => git_root_origin_url(&state.current_dir)?, // Only infer if explicitly set to infer
             Some(value) => value,
             None => DEFAULT.to_owned(), // Unset here defaults to just leaving it as 'default'
         },
         StateContext::Git => match merged_state.repo_url {
-            Some(value) if value == DEFAULT_INFER => git_root_origin_url()?,
+            Some(value) if value == DEFAULT_INFER => git_root_origin_url(&state.current_dir)?,
             Some(value) => value,
-            None => git_root_origin_url()?,
+            None => git_root_origin_url(&state.current_dir)?,
         },
     };
 
@@ -215,10 +217,17 @@ fn set_state(
     // TODO maybe infer the tag from the current folder or checked out tag
 
     // We only want to load the tag when we've actually downloaded the target repository
+
     if load_tag && tag != TIDPLOY_DEFAULT {
-        state.commit_sha = rev_parse_tag(&tag, state.network)?;
+        state.commit_sha = rev_parse_tag(&tag, &state.current_dir)?;
+    } else if load_tag {
+        state.commit_sha = rev_parse_tag("HEAD", &state.current_dir)?;
     } else {
-        state.commit_sha = tag;
+        state.commit_sha = tag.clone();
+    }
+
+    if tag != TIDPLOY_DEFAULT {
+        state.tag = tag;
     }
 
     if let Some(merged_run_state) = merged_run_state {
@@ -243,8 +252,12 @@ fn set_state(
     Ok(())
 }
 
-pub(crate) fn create_state_pre(cli_state: CliEnvState) -> Result<State, LoadError> {
-    create_state(cli_state, None, false)
+pub(crate) fn create_state_create(
+    cli_state: CliEnvState,
+    path: Option<&Path>,
+    load_tag: bool,
+) -> Result<State, LoadError> {
+    create_state(cli_state, None, path, load_tag)
 }
 
 fn parse_cli_envs(envs: Vec<String>) -> Vec<ConfigVar> {
@@ -260,20 +273,31 @@ pub(crate) fn create_state_run(
     cli_state: CliEnvState,
     exe_name: Option<String>,
     envs: Vec<String>,
+    path: Option<&Path>,
     load_tag: bool,
 ) -> Result<State, LoadError> {
     let cli_run_state = CliEnvRunState {
         exe_name,
         envs: parse_cli_envs(envs),
     };
-    create_state(cli_state, Some(cli_run_state), load_tag)
+    create_state(cli_state, Some(cli_run_state), path, load_tag)
 }
 
 fn create_state(
     cli_state: CliEnvState,
     cli_run_state: Option<CliEnvRunState>,
+    path: Option<&Path>,
     load_tag: bool,
 ) -> Result<State, LoadError> {
+    let current_dir = if let Some(path) = path {
+        path.to_owned()
+    } else {
+        get_current_dir().map_err(|source| FileError {
+            source,
+            msg: "Failed to get current dir to use for loading configs!".to_owned(),
+        })?
+    };
+
     let mut state = State {
         network: true,
         context: StateContext::Git,
@@ -282,11 +306,12 @@ fn create_state(
             url: "".to_owned(),
             encoded_url: "".to_owned(),
         },
+        tag: "latest".to_owned(),
         deploy_path: RelativePathBuf::new(),
         commit_sha: TIDPLOY_DEFAULT.to_owned(),
         envs: HashMap::<String, String>::new(),
         exe_name: TIDPLOY_DEFAULT.to_owned(),
-        current_dir: PathBuf::new(),
+        current_dir,
     };
 
     let env_state = load_state_vars();
@@ -313,10 +338,6 @@ fn create_state(
     };
 
     //let state_env_vars = load_state_vars()?;
-    state.current_dir = get_current_dir().map_err(|source| FileError {
-        source,
-        msg: "Failed to get current dir to use for loading configs!".to_owned(),
-    })?;
     let dploy_config = match state.context {
         StateContext::Git => {
             let git_root_relative = relative_to_git_root()?;

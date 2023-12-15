@@ -1,3 +1,4 @@
+mod archives;
 mod auth;
 mod commands;
 mod config;

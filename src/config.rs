@@ -23,7 +23,7 @@ pub(crate) enum ConfigErrorKind {
     #[error("Failed to parse config TOML! {0}")]
     TOMLDecode(#[from] toml::de::Error),
     #[error("Failed to parse config JSON! {0}")]
-    JSONDecode(#[from] serde_json::Error)
+    JSONDecode(#[from] serde_json::Error),
 }
 
 #[derive(Deserialize)]

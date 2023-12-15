@@ -1,14 +1,20 @@
-use crate::errors::GitError;
+use crate::errors::{GitError, RepoError};
+
 use crate::process::process_out;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
 use base64::Engine;
+use relative_path::RelativePath;
+use spinoff::{spinners, Spinner};
 
-use std::process::Command as Cmd;
+use std::fs;
+use std::path::Path;
+use std::process::{Command as Cmd, Stdio};
 use thiserror::Error as ThisError;
 
-pub(crate) fn git_root_origin_url() -> Result<String, GitError> {
+pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
     let git_origin_output = Cmd::new("git")
+        .current_dir(path)
         .arg("config")
         .arg("--get")
         .arg("remote.origin.url")
@@ -105,18 +111,9 @@ pub(crate) fn parse_repo_url(url: String) -> Result<Repo, RepoParseError> {
     })
 }
 
-pub(crate) fn rev_parse_tag(tag: &str, use_origin: bool) -> Result<String, GitError> {
-    let _prefixed_tag = if use_origin {
-        if tag.starts_with("origin/") {
-            tag.to_owned() // If it already contains origin/ we will just leave it as is
-        } else {
-            format!("origin/{}", tag)
-        }
-    } else {
-        tag.to_owned()
-    };
-
+pub(crate) fn rev_parse_tag(tag: &str, path: &Path) -> Result<String, GitError> {
     let parsed_tag_output = Cmd::new("git")
+        .current_dir(path)
         .arg("rev-parse")
         .arg(tag)
         .output()
@@ -127,11 +124,8 @@ pub(crate) fn rev_parse_tag(tag: &str, use_origin: bool) -> Result<String, GitEr
             parsed_tag_output.stderr,
             "Git parse tag failed! Could not decode output!".to_owned(),
         )?;
-        let _msg = format!("Git parse tag failed! err: {}", err_out);
-        return Err(GitError::from_f(
-            parsed_tag_output.status,
-            "Git parse tag failed!".to_owned(),
-        ));
+        let msg = format!("Git parse tag failed! err: {}", err_out);
+        return Err(GitError::from_f(parsed_tag_output.status, msg));
     }
 
     Ok(String::from_utf8(parsed_tag_output.stdout)
@@ -140,4 +134,137 @@ pub(crate) fn rev_parse_tag(tag: &str, use_origin: bool) -> Result<String, GitEr
         })?
         .trim_end()
         .to_owned())
+}
+
+pub(crate) fn repo_clone(
+    current_dir: &Path,
+    target_name: &str,
+    repo_url: &str,
+) -> Result<(), RepoError> {
+    let repo_path = current_dir.join(target_name);
+    let exists = repo_path.exists();
+    if !current_dir.exists() {
+        fs::create_dir_all(current_dir).map_err(|e| {
+            RepoError::from_io(
+                e,
+                format!("Couldn't create directory {:?} before clone", current_dir),
+            )
+        })?;
+    }
+
+    if exists {
+        fs::remove_dir_all(&repo_path).map_err(|e| {
+            RepoError::from_io(
+                e,
+                format!("Couldn't remove directory {:?} before clone", repo_path),
+            )
+        })?;
+    }
+
+    let mut sp = Spinner::new(spinners::Line, "Cloning repository...", None);
+
+    let _repo_clone_stdout = Cmd::new("git")
+        .current_dir(current_dir)
+        .arg("clone")
+        .arg("--filter=tree:0")
+        .arg("--sparse")
+        .arg(repo_url)
+        .arg(target_name)
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|e| {
+            GitError::from_io(
+                e,
+                format!("IO failure for clone Git repository {}!", target_name),
+            )
+        })?;
+
+    let _init_sparse = Cmd::new("git")
+        .current_dir(&repo_path)
+        .arg("sparse-checkout")
+        .arg("init")
+        .arg("--cone")
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|e| {
+            GitError::from_io(
+                e,
+                format!("IO failure for sparse-checkout init {:?}!", repo_path),
+            )
+        })?;
+
+    sp.success("Repository cloned!");
+
+    Ok(())
+}
+
+pub(crate) fn checkout(repo_path: &Path, commit_sha: &str) -> Result<(), RepoError> {
+    if !repo_path.exists() {
+        return Err(RepoError::NotCreated);
+    }
+
+    let mut sp = Spinner::new(
+        spinners::Line,
+        format!("Checking out commit {}...", commit_sha),
+        None,
+    );
+
+    let _repo_clone_stdout = Cmd::new("git")
+        .current_dir(repo_path)
+        .arg("reset")
+        .arg("--hard")
+        .arg(commit_sha)
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|e| {
+            GitError::from_io(
+                e,
+                format!("IO failure for reset hard Git repository {:?}!", repo_path),
+            )
+        })?;
+
+    let _init_sparse = Cmd::new("git")
+        .current_dir(repo_path)
+        .arg("clean")
+        .arg("-fxd")
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|e| GitError::from_io(e, format!("IO failure for git clean {:?}!", repo_path)))?;
+
+    sp.success("Commit checked out!");
+
+    Ok(())
+}
+
+pub(crate) fn checkout_path(repo_path: &Path, deploy_path: &RelativePath) -> Result<(), RepoError> {
+    if !repo_path.exists() {
+        return Err(RepoError::NotCreated);
+    }
+
+    let mut sp = Spinner::new(
+        spinners::Line,
+        format!(
+            "Sparse-checkout repository to deploy path {:?}...",
+            deploy_path
+        ),
+        None,
+    );
+
+    let _repo_clone_stdout = Cmd::new("git")
+        .current_dir(repo_path)
+        .arg("sparse-checkout")
+        .arg("set")
+        .arg(deploy_path.as_str())
+        .stdout(Stdio::piped())
+        .output()
+        .map_err(|e| {
+            GitError::from_io(
+                e,
+                format!("IO failure for sparse-checkout repository {:?}!", repo_path),
+            )
+        })?;
+
+    sp.success("Sparse checked out repository to deploy path!");
+
+    Ok(())
 }

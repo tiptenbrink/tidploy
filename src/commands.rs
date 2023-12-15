@@ -1,16 +1,25 @@
+use std::path::{Path, PathBuf};
+
+use crate::archives::{extract_archive, make_archive};
 use crate::auth::{auth_command, AuthError};
-use crate::errors::ProcessError;
+use crate::errors::{ProcessError, RepoError};
+use crate::git::{checkout, checkout_path, repo_clone};
+
+
 use crate::process::run_entrypoint;
-
-use crate::state::{create_state_pre, create_state_run, CliEnvState, LoadError, StateContext};
+use crate::state::{
+    create_state_create, create_state_run, CliEnvState, LoadError, State, StateContext,
+};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
+use base64::Engine;
 use clap::{Parser, Subcommand};
-
-// use std::time::Instant;
+use std::time::Instant;
 use thiserror::Error as ThisError;
 
 pub(crate) const DEFAULT_INFER: &str = "default_infer";
 pub(crate) const TIDPLOY_DEFAULT: &str = "_tidploy_default";
 pub(crate) const DEFAULT: &str = "default";
+pub(crate) const TMP_DIR: &str = "/tmp/tidploy";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -41,17 +50,20 @@ struct Cli {
 enum Commands {
     /// Save authentication details for specific stage until reboot
     Auth { key: String },
-    // /// Download tag or version with specific env, run automatically if using deploy
-    // Download,
+    /// Download tag or version with specific env, run automatically if using deploy
+    Download {
+        #[arg(long)]
+        repo_only: bool,
+    },
 
-    // /// Deploy tag or version with specific env
-    // Deploy {
-    //     #[arg(long = "exe", default_value = "default")]
-    //     executable: String,
+    /// Deploy tag or version with specific env
+    Deploy {
+        #[arg(short = 'x', long = "exe", default_value = "_tidploy_default")]
+        executable: String,
 
-    //     #[arg(short)]
-    //     variables: Vec<String>
-    // },
+        #[arg(short, num_args = 2)]
+        variables: Vec<String>,
+    },
     /// Run an entrypoint using the password set for a specific repo and stage 'deploy', can be used after download
     Run {
         #[arg(short = 'x', long = "exe", default_value = "_tidploy_default")]
@@ -59,6 +71,9 @@ enum Commands {
 
         #[arg(short, num_args = 2)]
         variables: Vec<String>,
+
+        #[arg(long)]
+        archive: Option<String>,
     },
 }
 
@@ -72,12 +87,90 @@ enum ErrorRepr {
     Load(#[from] LoadError),
     #[error("Auth failure! {0}")]
     Auth(#[from] AuthError),
-    #[error("Error unning executable! {0}")]
+    #[error("Error running executable! {0}")]
     Exe(#[from] ProcessError),
+    #[error("Error creating repository! {0}")]
+    Repo(#[from] RepoError),
+}
+
+fn create_repo(state: State) -> Result<PathBuf, RepoError> {
+    if !state.network {
+        return Err(RepoError::NeedsNetwork);
+    }
+    let repo_name = format!("{}_{}", state.repo.name, state.repo.encoded_url);
+    let tmp_dir = Path::new(TMP_DIR);
+    let repo_path = tmp_dir.join(&repo_name);
+    repo_clone(tmp_dir, &repo_name, &state.repo.url)?;
+
+    Ok(repo_path)
+}
+
+fn download_command(
+    cli_state: CliEnvState,
+    state: State,
+    repo_only: bool,
+) -> Result<Option<State>, ErrorRepr> {
+    //println!("{:?}", state);
+    let repo_path = create_repo(state).map_err(ErrorRepr::Repo)?;
+
+    if repo_only {
+        return Ok(None);
+    }
+
+    let state =
+        create_state_create(cli_state.clone(), Some(&repo_path), true).map_err(ErrorRepr::Load)?;
+    //println!("{:?}", state);
+    checkout(&repo_path, &state.commit_sha).map_err(ErrorRepr::Repo)?;
+
+    //println!("{:?}", state);
+
+    checkout_path(&repo_path, &state.deploy_path).map_err(ErrorRepr::Repo)?;
+
+    let deploy_path = state.deploy_path.to_path(&repo_path);
+
+    let state =
+        create_state_create(cli_state, Some(&deploy_path), true).map_err(ErrorRepr::Load)?;
+
+    //println!("{:?}", state);
+
+    //println!("time {}", now.elapsed().as_secs_f64());
+
+    let tmp_dir = Path::new(TMP_DIR);
+    let archives = tmp_dir.join("archives");
+    let deploy_encoded = B64USNP.encode(state.deploy_path.as_str());
+    let archive_name = format!(
+        "{}_{}_{}",
+        state.repo.name, state.commit_sha, deploy_encoded
+    );
+
+    make_archive(
+        &archives,
+        tmp_dir,
+        repo_path.file_name().unwrap().to_string_lossy().as_ref(),
+        &archive_name,
+    )
+    .map_err(ErrorRepr::Repo)?;
+
+    Ok(Some(state))
+}
+
+fn extra_envs(mut state: State) -> State {
+    let commit_long = state.commit_sha.clone();
+    let commit_short = state.commit_sha[0..7].to_owned();
+
+    state.envs.insert("TIDPLOY_SHA".to_owned(), commit_short);
+    state
+        .envs
+        .insert("TIDPLOY_SHA_LONG".to_owned(), commit_long);
+    state
+        .envs
+        .insert("TIDPLOY_TAG".to_owned(), state.tag.clone());
+
+    state
 }
 
 pub(crate) fn run_cli() -> Result<(), Error> {
-    //let now = Instant::now();
+    let _now = Instant::now();
 
     let args = Cli::parse();
 
@@ -93,20 +186,87 @@ pub(crate) fn run_cli() -> Result<(), Error> {
 
     match args.command {
         Commands::Auth { key } => {
-            let state = create_state_pre(cli_state).map_err(ErrorRepr::Load)?;
+            let state = create_state_create(cli_state, None, false).map_err(ErrorRepr::Load)?;
             //println!("{:?}", state);
             //println!("time {}", now.elapsed().as_secs_f64());
 
-            Ok(auth_command(&state, key).map_err(ErrorRepr::Auth)?)
+            auth_command(&state, key).map_err(ErrorRepr::Auth)?;
+
+            Ok(())
+        }
+        Commands::Download { repo_only } => {
+            let state =
+                create_state_create(cli_state.clone(), None, false).map_err(ErrorRepr::Load)?;
+            download_command(cli_state, state, repo_only)?;
+
+            Ok(())
+        }
+        Commands::Deploy {
+            executable,
+            variables,
+        } => {
+            let state =
+                create_state_create(cli_state.clone(), None, false).map_err(ErrorRepr::Load)?;
+            let state = download_command(cli_state.clone(), state, false)?.unwrap();
+            let tmp_dir = Path::new(TMP_DIR);
+            let deploy_encoded = B64USNP.encode(state.deploy_path.as_str());
+            let archive_name = format!(
+                "{}_{}_{}",
+                state.repo.name, state.commit_sha, deploy_encoded
+            );
+            let archive_path = tmp_dir
+                .join("archives")
+                .join(&archive_name)
+                .with_extension("tar.gz");
+            extract_archive(&archive_path, tmp_dir, &archive_name).map_err(ErrorRepr::Repo)?;
+            let target_path_root = tmp_dir.join(archive_name);
+            let target_path = state.deploy_path.to_path(target_path_root);
+            let state = create_state_run(
+                cli_state,
+                Some(executable),
+                variables,
+                Some(&target_path),
+                true,
+            )
+            .map_err(ErrorRepr::Load)?;
+
+            let state = extra_envs(state);
+            //println!("{:?}", state);
+
+            run_entrypoint(state.current_dir, &state.exe_name, state.envs)
+                .map_err(ErrorRepr::Exe)?;
+
+            Ok(())
         }
         Commands::Run {
             executable,
             variables,
+            archive,
         } => {
-            let state = create_state_run(cli_state, Some(executable), variables, false)
+            let path = if let Some(archive) = archive {
+                let tmp_dir = Path::new(TMP_DIR);
+                let archive_path = tmp_dir
+                    .join("archives")
+                    .join(&archive)
+                    .with_extension("tar.gz");
+                // Running archives doesn't fully work as it doesn't yet know how to retrieve the deploy path
+                // Splitting by '_' doesn't work easily as base64url includes '_' chars
+
+                extract_archive(&archive_path, tmp_dir, &archive).map_err(ErrorRepr::Repo)?;
+                Some(tmp_dir.join(&archive))
+            } else {
+                None
+            };
+
+            let path_ref = path.as_deref();
+
+            let state = create_state_run(cli_state, Some(executable), variables, path_ref, true)
                 .map_err(ErrorRepr::Load)?;
-            //println!("{:?}", state);
+
             //println!("time {}", now.elapsed().as_secs_f64());
+
+            let state = extra_envs(state);
+            //println!("{:?}", state);
 
             run_entrypoint(state.current_dir, &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;
