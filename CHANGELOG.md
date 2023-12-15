@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0 2023-12-15
+
+* Most features have been temporarily removed during the refactor. Use v0.9.0 if they are needed. This release contains:
+    - A major refactor of how state is loaded, to streamline it across commands
+    - A revamped "auth" command, which now uses a key and by default scopes only to the repo
+    - A revamped "run" command, which now utilizes the general set state
+
 ## 0.9.0 2023-12-14
 
 * dployer is the default option now, dployer_env renamed to env_var and new "run" subcommand

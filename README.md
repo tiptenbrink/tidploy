@@ -2,6 +2,8 @@ This CLI tool is designed to make it easy to deploy small applications.
 
 Only works on Linux. 
 
+NOTE: The documentation is currently outdated, but is mostly accurate for v0.8.0 and v0.9.0.
+
 ## Deploy unit example
 
 ### tidploy.json
