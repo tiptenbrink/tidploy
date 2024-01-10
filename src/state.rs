@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 use std::{collections::HashMap, env};
 use thiserror::Error as ThisError;
 
+use log::debug;
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub(crate) enum StateContext {
     None,
@@ -75,12 +77,13 @@ pub(crate) enum LoadError {
     Auth(#[from] AuthError),
 }
 
+#[derive(Debug)]
 struct CliEnvRunState {
     envs: Vec<ConfigVar>,
     exe_name: Option<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct CliEnvState {
     pub(crate) context: Option<StateContext>,
     pub(crate) network: Option<bool>,
@@ -102,6 +105,8 @@ fn load_state_run_vars() -> CliEnvRunState {
             envs_vec.push(ConfigVar { env_name, key: v })
         }
     }
+
+    debug!("Loaded EnvRunState from env vars. exe_name: {:?}. envs: {:?}", exe_name, envs_vec);
 
     CliEnvRunState {
         envs: envs_vec,
@@ -168,10 +173,12 @@ fn merge_run_state(
     let envs_overwrite_config = merge_vars(config.vars.clone(), Some(envs.envs));
     let cli_overwrite_envs = merge_vars(envs_overwrite_config, Some(cli.envs)).unwrap();
 
-    CliEnvRunState {
+    let merged_run_state = CliEnvRunState {
         exe_name: merge_options(config.exe_name.clone(), envs.exe_name, cli.exe_name),
         envs: cli_overwrite_envs,
-    }
+    };
+    debug!("Merged run state: {:?}", merged_run_state);
+    merged_run_state
 }
 
 fn set_state(
@@ -194,8 +201,14 @@ fn set_state(
     };
 
     match repo_url.as_str() {
-        DEFAULT => { /* Keep as default */ }
-        _other => state.repo = parse_repo_url(repo_url)?,
+        DEFAULT => { 
+            debug!("Keeping state repo as default.")
+         }
+        _other => {
+            let parsed_repo_url = parse_repo_url(repo_url)?;
+            debug!("Setting state repo to parsed repo url {:?}", parsed_repo_url);
+            state.repo = parsed_repo_url
+        },
     }
 
     if let Some(value) = merged_state.network {
@@ -269,6 +282,7 @@ fn parse_cli_envs(envs: Vec<String>) -> Vec<ConfigVar> {
         .collect()
 }
 
+/// Creates the state that is used to run the executable. Adds envs provided through CLI to `create_state`.
 pub(crate) fn create_state_run(
     cli_state: CliEnvState,
     exe_name: Option<String>,
@@ -280,6 +294,7 @@ pub(crate) fn create_state_run(
         exe_name,
         envs: parse_cli_envs(envs),
     };
+    debug!("Parsed CLI envs as {:?}", cli_run_state);
     create_state(cli_state, Some(cli_run_state), path, load_tag)
 }
 
@@ -292,11 +307,13 @@ fn create_state(
     let current_dir = if let Some(path) = path {
         path.to_owned()
     } else {
+        debug!("Using current dir as path for creating state.");
         get_current_dir().map_err(|source| FileError {
             source,
             msg: "Failed to get current dir to use for loading configs!".to_owned(),
         })?
     };
+    debug!("Creating state with path {:?}", path);
 
     let mut state = State {
         network: true,
@@ -313,8 +330,10 @@ fn create_state(
         exe_name: TIDPLOY_DEFAULT.to_owned(),
         current_dir,
     };
+    debug!("Starting state is {:?}", state);
 
     let env_state = load_state_vars();
+    debug!("Loaded EnvState from env vars: {:?}", env_state);
     let env_run_state = if cli_run_state.is_some() {
         Some(load_state_run_vars())
     } else {
@@ -336,6 +355,7 @@ fn create_state(
         },
         Some(cli_context) => cli_context,
     };
+    debug!("Loaded state context as {:?}", state.context);
 
     //let state_env_vars = load_state_vars()?;
     let dploy_config = match state.context {
@@ -345,6 +365,7 @@ fn create_state(
             traverse_configs(state.current_dir.clone(), git_root_relative)?
         }
         StateContext::None => {
+            debug!("Loading config only at current dir.");
             load_dploy_config(state.current_dir.clone()).map_err(|source| ConfigError {
                 source,
                 msg: "Failed to load config of current dir when loading with context none!"
@@ -354,6 +375,7 @@ fn create_state(
     };
 
     let merged_state = merge_state(&dploy_config, env_state, cli_state);
+    debug!("Merged CliEnv state from config, env and CLI: {:?}", merged_state);
 
     if let Some(cli_run_state) = cli_run_state {
         let merged_run_state =

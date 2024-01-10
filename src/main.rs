@@ -10,6 +10,8 @@ mod secret_store;
 mod state;
 
 fn main() {
+    env_logger::init();
+    
     let program = commands::run_cli();
     if let Err(program_err) = program {
         eprintln!("Error: {}", program_err);

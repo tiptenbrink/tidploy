@@ -14,6 +14,7 @@ use base64::Engine;
 use clap::{Parser, Subcommand};
 use std::time::Instant;
 use thiserror::Error as ThisError;
+use log::debug;
 
 pub(crate) const DEFAULT_INFER: &str = "default_infer";
 pub(crate) const TIDPLOY_DEFAULT: &str = "_tidploy_default";
@@ -60,6 +61,7 @@ enum Commands {
         #[arg(short = 'x', long = "exe")]
         executable: Option<String>,
 
+        /// Variables to load. Supply as many pairs of <key> <env var name> as needed.
         #[arg(short, num_args = 2)]
         variables: Vec<String>,
     },
@@ -146,9 +148,12 @@ fn download_command(
     Ok(Some(state))
 }
 
+/// Adds a number of useful environment variables, such as the commit sha (both full and the first 7 characters) as well as the tag.
 fn extra_envs(mut state: State) -> State {
     let commit_long = state.commit_sha.clone();
     let commit_short = state.commit_sha[0..7].to_owned();
+
+    debug!("Setting state extra envs: sha: {}, sha_long: {}, tag: {}", commit_short, commit_long, state.tag);
 
     state.envs.insert("TIDPLOY_SHA".to_owned(), commit_short);
     state
@@ -173,6 +178,8 @@ pub(crate) fn run_cli() -> Result<(), Error> {
         deploy_path: args.deploy_pth,
         tag: args.tag,
     };
+
+    debug!("Parsed CLI state as {:?}", cli_state);
 
     match args.command {
         Commands::Auth { key } => {
@@ -230,6 +237,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             variables,
             archive,
         } => {
+            // Only loads archive if it is given, otherwise path is None
             let path = if let Some(archive) = archive {
                 let tmp_dir = Path::new(TMP_DIR);
                 let archive_path = tmp_dir
@@ -240,11 +248,13 @@ pub(crate) fn run_cli() -> Result<(), Error> {
                 // Splitting by '_' doesn't work easily as base64url includes '_' chars
 
                 extract_archive(&archive_path, tmp_dir, &archive).map_err(ErrorRepr::Repo)?;
-                Some(tmp_dir.join(&archive))
+                let archive_path = tmp_dir.join(&archive);
+                debug!("Extracted and loaded archive at {:?}", &archive_path);
+                Some(archive_path)
             } else {
+                debug!("No archive provided to run command.");
                 None
             };
-
             let path_ref = path.as_deref();
 
             let state = create_state_run(cli_state, executable, variables, path_ref, true)
