@@ -11,6 +11,8 @@ use std::io::Error as IOError;
 
 use thiserror::Error as ThisError;
 
+use tracing::{debug, span, Level};
+
 #[derive(ThisError, Debug)]
 #[error("{msg} {source}")]
 pub(crate) struct AuthError {
@@ -28,8 +30,10 @@ pub(crate) enum AuthErrorKind {
     Keyring(#[from] KeyringError),
 }
 
-pub(crate) fn auth_command(state: &State, key: String) -> Result<(), AuthError> {
-    let password = prompt_password("Enter password:\n").map_err(|e| AuthError {
+/// Prompts for secret and saves it at <key>:<repo name>/<deploy path>/<commit sha>. The last three are all extracted 
+/// from the state. Forward slashes in the deploy path are replaced with \\.
+pub(crate) fn secret_command(state: &State, key: String) -> Result<(), AuthError> {
+    let password = prompt_password("Enter secret:\n").map_err(|e| AuthError {
         msg: "Failed to create password prompt!".to_owned(),
         source: e.into(),
     })?;
@@ -51,7 +55,13 @@ pub(crate) fn auth_command(state: &State, key: String) -> Result<(), AuthError> 
     Ok(println!("Set password with store_key {}!", &store_key))
 }
 
-pub(crate) fn auth_get_password(state: &State, key: &str) -> Result<String, AuthErrorKind> {
+/// Gets secret using a key with format <key>:<repo name>/<deploy path>/<commit sha>. If it cannot find an exact 
+/// match, it will first replace the commit sha with _tidploy_default, then it will try with that and with an empty
+/// deploy path. Finally it will try with 'repo' set to default. 
+pub(crate) fn get_secret(state: &State, key: &str) -> Result<String, AuthErrorKind> {
+    let secret_span = span!(Level::DEBUG, "get_secret");
+    let _enter = secret_span.enter();
+    debug!("Getting secret with key {}", key);
     let path_str = state.deploy_path.as_str().replace('/', "\\\\");
     let store_key: String = format!(
         "{}:{}/{}/{}",

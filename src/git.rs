@@ -11,6 +11,7 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command as Cmd, Stdio};
 use thiserror::Error as ThisError;
+use tracing::debug;
 
 pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
     let git_origin_output = Cmd::new("git")
@@ -33,10 +34,14 @@ pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
         ));
     }
 
-    Ok(String::from_utf8(git_origin_output.stdout)
+    let url = String::from_utf8(git_origin_output.stdout)
         .map_err(|e| GitError::from_dec(e, "Failed to decode Git origin output!".to_owned()))?
         .trim_end()
-        .to_owned())
+        .to_owned();
+
+    debug!("Read remote url from git root origin: {}", url);
+
+    Ok(url)
 }
 
 pub(crate) fn relative_to_git_root() -> Result<String, GitError> {

@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use thiserror::Error as ThisError;
-use log::debug;
+use tracing::debug;
 
 #[derive(ThisError, Debug)]
 #[error("{msg} {source}")]

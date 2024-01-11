@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::archives::{extract_archive, make_archive};
-use crate::auth::{auth_command, AuthError};
+use crate::secret::{secret_command, AuthError};
 use crate::errors::{ProcessError, RepoError};
-use crate::git::{checkout, checkout_path, repo_clone};
+use crate::git::{checkout, checkout_path, repo_clone, Repo};
 
 use crate::process::run_entrypoint;
 use crate::state::{
@@ -14,7 +14,9 @@ use base64::Engine;
 use clap::{Parser, Subcommand};
 use std::time::Instant;
 use thiserror::Error as ThisError;
-use log::debug;
+use tracing::{debug, Level};
+use tracing::span;
+use std::fmt::Debug;
 
 pub(crate) const DEFAULT_INFER: &str = "default_infer";
 pub(crate) const TIDPLOY_DEFAULT: &str = "_tidploy_default";
@@ -30,6 +32,7 @@ struct Cli {
     #[arg(long, value_enum, global = true)]
     context: Option<StateContext>,
 
+    /// UNFINISHED.
     #[arg(long, global = true)]
     network: Option<bool>,
 
@@ -48,8 +51,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Save authentication details for specific stage until reboot
-    Auth { key: String },
+    /// Save secret with key until reboot
+    Secret { key: String },
     /// Download tag or version with specific env, run automatically if using deploy
     Download {
         #[arg(long)]
@@ -94,40 +97,55 @@ enum ErrorRepr {
     Repo(#[from] RepoError),
 }
 
-fn create_repo(state: State) -> Result<PathBuf, RepoError> {
-    if !state.network {
+fn create_repo(network: bool, repo: Repo) -> Result<PathBuf, RepoError> {
+    if !network {
         return Err(RepoError::NeedsNetwork);
     }
-    let repo_name = format!("{}_{}", state.repo.name, state.repo.encoded_url);
+    let repo_name = format!("{}_{}", repo.name, repo.encoded_url);
     let tmp_dir = Path::new(TMP_DIR);
     let repo_path = tmp_dir.join(&repo_name);
-    repo_clone(tmp_dir, &repo_name, &state.repo.url)?;
+    repo_clone(tmp_dir, &repo_name, &repo.url)?;
 
     Ok(repo_path)
 }
 
 fn download_command(
     cli_state: CliEnvState,
-    state: State,
+    network: bool,
+    repo: Repo,
     repo_only: bool,
 ) -> Result<Option<State>, ErrorRepr> {
-    let repo_path = create_repo(state).map_err(ErrorRepr::Repo)?;
+    // This will be exited when `download_command` returns
+    let download_span = span!(Level::DEBUG, "download");
+    let _dl_enter = download_span.enter();
+    
+    let repo_path = create_repo(network, repo).map_err(ErrorRepr::Repo)?;
 
     if repo_only {
         return Ok(None);
     }
 
+    // The precheckout stage creates state from the recently created repo, determining which commit sha to use for 
+    // the checkout and which deploy path to use
+    let head_span = span!(Level::DEBUG, "precheckout").entered();
     let state =
         create_state_create(cli_state.clone(), Some(&repo_path), true).map_err(ErrorRepr::Load)?;
+    head_span.exit();
 
+    // Checks out the correct commit
     checkout(&repo_path, &state.commit_sha).map_err(ErrorRepr::Repo)?;
-
+    // Does a sparse checkout of the deploy path
     checkout_path(&repo_path, &state.deploy_path).map_err(ErrorRepr::Repo)?;
-
+    
+    let commit_short = &state.commit_sha[0..7];
+    let deploy_path_str = format!("{:?}", state.deploy_path);
+    let checkedout_span = span!(Level::DEBUG, "checked_out", sha=commit_short, path=deploy_path_str).entered();
     let deploy_path = state.deploy_path.to_path(&repo_path);
-
+    
+    // Creates state from the newly checked out path and state, which should now contain the correct config
     let state =
         create_state_create(cli_state, Some(&deploy_path), true).map_err(ErrorRepr::Load)?;
+    checkedout_span.exit();
 
     let tmp_dir = Path::new(TMP_DIR);
     let archives = tmp_dir.join("archives");
@@ -178,21 +196,23 @@ pub(crate) fn run_cli() -> Result<(), Error> {
         deploy_path: args.deploy_pth,
         tag: args.tag,
     };
-
+    
     debug!("Parsed CLI state as {:?}", cli_state);
 
     match args.command {
-        Commands::Auth { key } => {
+        Commands::Secret { key } => {
+            let auth_span = span!(Level::DEBUG, "auth");
+            let _auth_enter = auth_span.enter();
             let state = create_state_create(cli_state, None, false).map_err(ErrorRepr::Load)?;
 
-            auth_command(&state, key).map_err(ErrorRepr::Auth)?;
+            secret_command(&state, key).map_err(ErrorRepr::Auth)?;
 
             Ok(())
         }
         Commands::Download { repo_only } => {
             let state =
                 create_state_create(cli_state.clone(), None, false).map_err(ErrorRepr::Load)?;
-            download_command(cli_state, state, repo_only)?;
+            download_command(cli_state, state.network, state.repo, repo_only)?;
 
             Ok(())
         }
@@ -200,9 +220,18 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             executable,
             variables,
         } => {
+            // We drop the dpl_enter when exiting this scope
+            let deploy_span = span!(Level::DEBUG, "deploy");
+            let _dpl_enter = deploy_span.enter();
+            
+            // This one we must manually exit so we use 'entered'. The predownload stage determines the "network" and "repo".
+            let enter_dl = span!(Level::DEBUG, "predownload").entered();
             let state =
                 create_state_create(cli_state.clone(), None, false).map_err(ErrorRepr::Load)?;
-            let state = download_command(cli_state.clone(), state, false)?.unwrap();
+            enter_dl.exit();
+
+            let state = download_command(cli_state.clone(), state.network, state.repo, false)?.unwrap();
+            
             let tmp_dir = Path::new(TMP_DIR);
             let deploy_encoded = B64USNP.encode(state.deploy_path.as_str());
             let archive_name = format!(
@@ -214,6 +243,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
                 .join(&archive_name)
                 .with_extension("tar.gz");
             extract_archive(&archive_path, tmp_dir, &archive_name).map_err(ErrorRepr::Repo)?;
+            
             let target_path_root = tmp_dir.join(archive_name);
             let target_path = state.deploy_path.to_path(target_path_root);
             let state = create_state_run(
@@ -237,6 +267,8 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             variables,
             archive,
         } => {
+            let _enter = span!(Level::DEBUG, "run");
+            
             // Only loads archive if it is given, otherwise path is None
             let path = if let Some(archive) = archive {
                 let tmp_dir = Path::new(TMP_DIR);

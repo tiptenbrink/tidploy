@@ -1,5 +1,5 @@
 mod archives;
-mod auth;
+mod secret;
 mod commands;
 mod config;
 mod errors;
@@ -8,9 +8,10 @@ mod git;
 mod process;
 mod secret_store;
 mod state;
+use tracing_subscriber;
 
 fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
     
     let program = commands::run_cli();
     if let Err(program_err) = program {

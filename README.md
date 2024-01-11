@@ -50,18 +50,44 @@ If dployer is not specified, it is assumed that the set password for the `deploy
 ```text
 Simple deployment tool for deploying small deploy units and loading secrets
 
-Usage: tidploy <COMMAND>
+Usage: tidploy [OPTIONS] <COMMAND>
 
 Commands:
-  download  Download tag or version with specific env
-  deploy    Deploy tag or version with specific env
   auth      Save authentication details for specific stage until reboot
+  download  Download tag or version with specific env, run automatically if using deploy
+  deploy    Deploy tag or version with specific env
+  run       Run an entrypoint using the password set for a specific repo and stage 'deploy', can be used after download
   help      Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help     Print help
-  -V, --version  Print version
+      --context <CONTEXT>        [possible values: none, git]
+      --network <NETWORK>        [possible values: true, false]
+  -r, --repo <REPO>              Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it. Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url' For infering, it looks at the URL set to the 'origin' remote
+  -t, --tag <TAG>                
+  -d, --deploy-pth <DEPLOY_PTH>  
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```
+
+### Auth
+
+```text
+Save authentication details for specific stage until reboot
+
+Usage: tidploy auth [OPTIONS] <KEY>
+
+Arguments:
+  <KEY>  
+
+Options:
+      --context <CONTEXT>        [possible values: none, git]
+      --network <NETWORK>        [possible values: true, false]
+  -r, --repo <REPO>              Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it. Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url' For infering, it looks at the URL set to the 'origin' remote
+  -t, --tag <TAG>                
+  -d, --deploy-pth <DEPLOY_PTH>  
+  -h, --help                     Print help
+```
+
 
 ### Download
 
@@ -81,30 +107,6 @@ Arguments:
 
   [GIT_REF]
           Version or tag to download
-
-Options:
-  -r, --repo <REPO>
-          Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
-          
-          [default: default_git_root_origin]
-
-  -h, --help
-          Print help (see a summary with '-h')
-```
-
-
-### Auth
-
-```text
-Save authentication details for specific stage until reboot
-
-Usage: tidploy auth [OPTIONS] <STAGE>
-
-Arguments:
-  <STAGE>
-          Possible values:
-          - download: Download stage
-          - deploy:   Deploy stage
 
 Options:
   -r, --repo <REPO>
