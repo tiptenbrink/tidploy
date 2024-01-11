@@ -1,13 +1,11 @@
-use crate::secret::{get_secret, AuthError};
 use crate::commands::{DEFAULT, DEFAULT_INFER, TIDPLOY_DEFAULT};
 use crate::config::{
     load_dploy_config, merge_vars, traverse_configs, ConfigError, ConfigVar, DployConfig,
 };
-use crate::errors::{GitError, RelPathError};
+use crate::errors::{GitError, RelPathError, RepoParseError};
 use crate::filesystem::{get_current_dir, FileError};
-use crate::git::{
-    git_root_origin_url, parse_repo_url, relative_to_git_root, rev_parse_tag, Repo, RepoParseError,
-};
+use crate::git::{git_root_origin_url, parse_repo_url, relative_to_git_root, rev_parse_tag, Repo};
+use crate::secret::{get_secret, AuthError};
 
 use clap::ValueEnum;
 
@@ -106,7 +104,10 @@ fn load_state_run_vars() -> CliEnvRunState {
         }
     }
 
-    debug!("Loaded EnvRunState from env vars. exe_name: {:?}. envs: {:?}", exe_name, envs_vec);
+    debug!(
+        "Loaded EnvRunState from env vars. exe_name: {:?}. envs: {:?}",
+        exe_name, envs_vec
+    );
 
     CliEnvRunState {
         envs: envs_vec,
@@ -129,7 +130,9 @@ fn load_state_vars() -> CliEnvState {
     for (k, v) in env::vars() {
         match k.as_str() {
             "TIDPLOY_REPO" => env_state.repo_url = Some(v),
-            "TIDPLOY_NETWORK" => env_state.network = Some(v.len() > 0 && v != "0" && v.to_lowercase() != "false"),
+            "TIDPLOY_NETWORK" => {
+                env_state.network = Some(!v.is_empty() && v != "0" && v.to_lowercase() != "false")
+            }
             "TIDPLOY_TAG" => env_state.tag = Some(v),
             "TIDPLOY_PTH" => env_state.deploy_path = Some(v),
             _ => {}
@@ -188,7 +191,7 @@ fn merge_run_state(
 enum ReadRepoMethod {
     Value(String),
     CurDirGitRoot,
-    Default
+    Default,
 }
 
 fn set_state(
@@ -203,10 +206,13 @@ fn set_state(
         None => match state.context {
             StateContext::None => ReadRepoMethod::Default,
             StateContext::Git => ReadRepoMethod::CurDirGitRoot,
-        }
+        },
     };
-    debug!("repo_url will be read using method: {:?}", read_repo_url_method);
-    
+    debug!(
+        "repo_url will be read using method: {:?}",
+        read_repo_url_method
+    );
+
     let repo_url = match read_repo_url_method {
         ReadRepoMethod::Value(value) => value,
         ReadRepoMethod::Default => DEFAULT.to_owned(),
@@ -214,14 +220,17 @@ fn set_state(
     };
 
     match repo_url.as_str() {
-        DEFAULT => { 
+        DEFAULT => {
             debug!("Keeping state repo as default.")
-         }
+        }
         _other => {
             let parsed_repo_url = parse_repo_url(repo_url)?;
-            debug!("Setting state repo to parsed repo url {:?}", parsed_repo_url);
+            debug!(
+                "Setting state repo to parsed repo url {:?}",
+                parsed_repo_url
+            );
             state.repo = parsed_repo_url
-        },
+        }
     }
 
     if let Some(value) = merged_state.network {
@@ -243,7 +252,6 @@ fn set_state(
         debug!("Deploy path set to {:?}.", deploy_path);
         state.deploy_path = deploy_path
     };
-    
 
     // TODO maybe infer the tag from the current folder or checked out tag
 
@@ -300,7 +308,7 @@ pub(crate) fn create_state_create(
 fn parse_cli_envs(envs: Vec<String>) -> Vec<ConfigVar> {
     envs.chunks_exact(2)
         .map(|c| ConfigVar {
-            key: c.get(0).unwrap().to_owned(),
+            key: c.first().unwrap().to_owned(),
             env_name: c.get(1).unwrap().to_owned(),
         })
         .collect()
@@ -326,7 +334,7 @@ pub(crate) fn create_state_run(
     create_state(cli_state, Some(cli_run_state), path, load_tag)
 }
 
-/// Create a new state, merging the cli_state, env var state and config state and potentially loading it from the 
+/// Create a new state, merging the cli_state, env var state and config state and potentially loading it from the
 /// context of the supplied path (or current directory if not provided). If cli_run_state is None, no run_state is
 /// loaded.
 fn create_state(
@@ -351,7 +359,7 @@ fn create_state(
     // ######################
 
     // By default it sets network to true, context to git, repo name to default with an empty url; tag to latest.
-    // deploy path to root of the repository and _tidploy_default for commit and exe name. 
+    // deploy path to root of the repository and _tidploy_default for commit and exe name.
     // current_dir is either the provided path or the directory that the command is called from
     let mut state = State {
         network: true,
@@ -415,7 +423,10 @@ fn create_state(
     };
 
     let merged_state = merge_state(&dploy_config, env_state, cli_state);
-    debug!("Merged CliEnv state from config, env and CLI: {:?}", merged_state);
+    debug!(
+        "Merged CliEnv state from config, env and CLI: {:?}",
+        merged_state
+    );
 
     if let Some(cli_run_state) = cli_run_state {
         let merged_run_state =

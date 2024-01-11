@@ -111,6 +111,14 @@ pub(crate) enum RelPathErrorKind {
 }
 
 #[derive(Debug, ThisError)]
+pub(crate) enum RepoParseError {
+    #[error("Repo URL '{0}' doesn't end with /<name>.git and cannot be parsed!")]
+    InvalidURL(String),
+    #[error("Path '{0}' cannot be interpreted as valid URL. Does it end in a directory!")]
+    InvalidPath(String),
+}
+
+#[derive(Debug, ThisError)]
 pub(crate) enum RepoError {
     #[error("Failure during repo process dealing with files! {0}")]
     File(#[from] FileError),
@@ -118,6 +126,8 @@ pub(crate) enum RepoError {
     Tar(#[from] TarError),
     #[error("Failure during repo process dealing with Git! {0}")]
     Git(#[from] GitError),
+    #[error("Failure parsing repo/repo url! {0}")]
+    RepoParse(#[from] RepoParseError),
     #[error("Cannot create repository if network is disabled!")]
     NeedsNetwork,
     #[error("Cannot checkout if repository has not been created!")]

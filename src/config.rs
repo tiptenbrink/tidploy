@@ -124,14 +124,17 @@ fn overwrite_config(root_config: DployConfig, overwrite_config: DployConfig) -> 
     }
 }
 
-/// Looks at config at start_path and appends levels from final_path, looking at a config at every level. It then 
+/// Looks at config at start_path and appends levels from final_path, looking at a config at every level. It then
 /// combines them.
 pub(crate) fn traverse_configs(
     start_path: PathBuf,
     final_path: RelativePathBuf,
 ) -> Result<DployConfig, ConfigError> {
-    debug!("Traversing configs from {:?} to relative {:?}", start_path, final_path);
-    
+    debug!(
+        "Traversing configs from {:?} to relative {:?}",
+        start_path, final_path
+    );
+
     let root_config = load_dploy_config(&start_path).map_err(|source| {
         let msg = format!(
             "Failed to load root config at path {:?} while traversing configs.",

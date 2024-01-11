@@ -1,4 +1,4 @@
-use crate::errors::{GitError, RepoError};
+use crate::errors::{GitError, RepoError, RepoParseError};
 
 use crate::process::process_out;
 
@@ -10,7 +10,6 @@ use spinoff::{spinners, Spinner};
 use std::fs;
 use std::path::Path;
 use std::process::{Command as Cmd, Stdio};
-use thiserror::Error as ThisError;
 use tracing::debug;
 
 pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
@@ -66,12 +65,6 @@ pub(crate) fn relative_to_git_root() -> Result<String, GitError> {
         .to_owned())
 }
 
-#[derive(Debug, ThisError)]
-pub(crate) enum RepoParseError {
-    #[error("Repo URL '{0}' doesn't end with /<name>.git and cannot be parsed!")]
-    InvalidURL(String),
-}
-
 #[derive(Debug)]
 pub(crate) struct Repo {
     pub(crate) name: String,
@@ -94,6 +87,7 @@ pub(crate) fn parse_repo_url(url: String) -> Result<Repo, RepoParseError> {
         .map(|a| a.to_vec().join("/"));
 
     let encoded_url = if let Some(pre_part) = first_parts {
+        debug!("Encoding parsed url pre_part: {}", pre_part);
         B64USNP.encode(pre_part)
     } else {
         return Err(RepoParseError::InvalidURL(url));
@@ -166,6 +160,10 @@ pub(crate) fn repo_clone(
         })?;
     }
 
+    debug!(
+        "Cloning repository {} directory at {:?}",
+        repo_url, repo_path
+    );
     let mut sp = Spinner::new(spinners::Line, "Cloning repository...", None);
 
     let _repo_clone_stdout = Cmd::new("git")
