@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.1 2024-01-12
+
+* Upload changelog
+
+## 0.12.0 2024-01-12
+
+Significant improvements have been made. Debug logs are available when running with `RUST_LOG=DEBUG` set as an environment variable. 
+
+* Support for cloning from local repositories (almost any Git URL should work now). This also separates some more logic.
+* `run` now works with a deploy path when running an archive.
+* `network` option has been removed, the context now determines this (although it's not yet implemented). 
+
 ## 0.11.2 2023-12-15
 
 * Fix exe name being overwritten by default value from CLI. Fix run state precedence.
