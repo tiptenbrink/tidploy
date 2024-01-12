@@ -43,8 +43,9 @@ pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
     Ok(url)
 }
 
-pub(crate) fn relative_to_git_root() -> Result<String, GitError> {
+pub(crate) fn relative_to_git_root(path: &Path) -> Result<String, GitError> {
     let git_root_relative_output = Cmd::new("git")
+        .current_dir(path)
         .arg("rev-parse")
         .arg("--show-prefix")
         .output()
@@ -74,17 +75,17 @@ pub(crate) struct Repo {
 
 impl Repo {
     pub(crate) fn dir_name(&self) -> String {
-        return format!("{}_{}", self.name, self.encoded_url)
+        format!("{}_{}", self.name, self.encoded_url)
     }
 }
 
-/// Parse a repo URL to extract a "name" from it, as well as encode the part before the name to still uniquely 
+/// Parse a repo URL to extract a "name" from it, as well as encode the part before the name to still uniquely
 /// identify it. Only supports forward slashes as path seperator.
 pub(crate) fn parse_repo_url(url: String) -> Result<Repo, RepoParseError> {
-    let url = url.strip_suffix("/").unwrap_or(&url).to_owned();
+    let url = url.strip_suffix('/').unwrap_or(&url).to_owned();
     // We want the final part, after the slash, as the "file name"
     let split_parts: Vec<&str> = url.split('/').collect();
-    
+
     // If last does not exist then the string is empty so invalid
     let last_part = *split_parts
         .last()
@@ -97,9 +98,7 @@ pub(crate) fn parse_repo_url(url: String) -> Result<Repo, RepoParseError> {
         "".to_owned()
     } else {
         // We get everything except the last part and then rejoin them using the slash we originally split them with
-        let pre_part = split_parts
-        .get(0..split_parts.len() - 1).unwrap()
-        .join("/");
+        let pre_part = split_parts.get(0..split_parts.len() - 1).unwrap().join("/");
         debug!("Encoding parsed url pre_part: {}", pre_part);
         // base64urlsafe-encode
         B64USNP.encode(pre_part)
@@ -248,7 +247,7 @@ pub(crate) fn checkout(repo_path: &Path, commit_sha: &str) -> Result<(), RepoErr
         .stdout(Stdio::piped())
         .output()
         .map_err(|e| GitError::from_io(e, format!("IO failure for git clean {:?}!", repo_path)))?;
-    
+
     let success_msg = format!("Checked out {}!", commit_sha);
     sp.success(&success_msg);
 
@@ -283,7 +282,10 @@ pub(crate) fn checkout_path(repo_path: &Path, deploy_path: &RelativePath) -> Res
             )
         })?;
 
-    let success_msg = format!("Sparse checked out repository to deploy path {}!", deploy_path);
+    let success_msg = format!(
+        "Sparse checked out repository to deploy path {}!",
+        deploy_path
+    );
     sp.success(&success_msg);
 
     Ok(())
@@ -298,7 +300,10 @@ mod tests {
         let git_url = "https://github.com/tiptenbrink/tidploy.git".to_owned();
         let encoded_url = "aHR0cHM6Ly9naXRodWIuY29tL3RpcHRlbmJyaW5r".to_owned();
         let name = "tidploy".to_owned();
-        assert_eq!(parse_repo_url(git_url.clone()).unwrap().encoded_url, encoded_url);
+        assert_eq!(
+            parse_repo_url(git_url.clone()).unwrap().encoded_url,
+            encoded_url
+        );
         assert_eq!(parse_repo_url(git_url.clone()).unwrap().name, name);
         assert_eq!(parse_repo_url(git_url.clone()).unwrap().url, git_url);
     }
@@ -309,9 +314,15 @@ mod tests {
         let path_no_slash = "/home/tiptenbrink/tidploy".to_owned();
         let encoded_url = "L2hvbWUvdGlwdGVuYnJpbms".to_owned();
         let name = "tidploy".to_owned();
-        assert_eq!(parse_repo_url(path.clone()).unwrap().encoded_url, encoded_url);
+        assert_eq!(
+            parse_repo_url(path.clone()).unwrap().encoded_url,
+            encoded_url
+        );
         assert_eq!(parse_repo_url(path.clone()).unwrap().name, name);
         assert_eq!(parse_repo_url(path).unwrap().url, path_no_slash);
-        assert_eq!(parse_repo_url(path_no_slash.clone()).unwrap().url, path_no_slash);
+        assert_eq!(
+            parse_repo_url(path_no_slash.clone()).unwrap().url,
+            path_no_slash
+        );
     }
 }

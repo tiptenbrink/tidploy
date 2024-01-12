@@ -9,7 +9,6 @@ mod secret;
 mod secret_store;
 mod state;
 
-
 fn main() {
     tracing_subscriber::fmt::init();
 

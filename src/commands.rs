@@ -1,8 +1,7 @@
-
 use std::path::{Path, PathBuf};
 
 use crate::archives::{extract_archive, make_archive};
-use crate::errors::{ProcessError, RepoError, RepoParseError};
+use crate::errors::{ProcessError, RepoError};
 use crate::git::{checkout, checkout_path, repo_clone, Repo};
 use crate::secret::{secret_command, AuthError};
 
@@ -13,7 +12,7 @@ use crate::state::{
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
 use base64::Engine;
 use clap::{Parser, Subcommand};
-use relative_path::RelativePathBuf;
+
 use std::fmt::Debug;
 use std::time::Instant;
 use thiserror::Error as ThisError;
@@ -203,7 +202,7 @@ fn prepare_command(
         let repo_path = tmp_dir.join(repo.dir_name());
 
         if !repo_path.exists() {
-            return Err(RepoError::NotCreated.into())
+            return Err(RepoError::NotCreated.into());
         }
 
         repo_path
@@ -309,7 +308,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             let target_path_root = tmp_dir.join(archive_name);
             let target_path = state.deploy_path.to_path(target_path_root);
             let state =
-                create_state_run(cli_state, executable, variables, Some(&target_path), true, false)
+                create_state_run(cli_state, executable, variables, Some(&target_path), true)
                     .map_err(ErrorRepr::Load)?;
 
             let state = extra_envs(state);
@@ -339,20 +338,24 @@ pub(crate) fn run_cli() -> Result<(), Error> {
                 extract_archive(&archive_path, tmp_dir, &archive).map_err(ErrorRepr::Repo)?;
                 let archive_path = tmp_dir.join(&archive);
                 debug!("Extracted and loaded archive at {:?}", &archive_path);
-                Some(archive_path)
+
+                let state = create_state_create(cli_state.clone(), Some(&archive_path), true)
+                    .map_err(ErrorRepr::Load)?;
+                let target_path = state.deploy_path.to_path(&archive_path);
+
+                Some(target_path)
             } else {
                 debug!("No archive provided to run command.");
                 None
             };
             let path_ref = path.as_deref();
 
-            let state = create_state_run(cli_state, executable, variables, path_ref, true, true)
+            let state = create_state_run(cli_state, executable, variables, path_ref, true)
                 .map_err(ErrorRepr::Load)?;
 
             let state = extra_envs(state);
-            
-            let entrypoint_dir = state.deploy_path.to_path(state.current_dir);
-            run_entrypoint(entrypoint_dir, &state.exe_name, state.envs)
+
+            run_entrypoint(&state.current_dir, &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;
 
             Ok(())

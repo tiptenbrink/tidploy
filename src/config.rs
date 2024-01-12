@@ -29,7 +29,6 @@ pub(crate) enum ConfigErrorKind {
 
 #[derive(Deserialize, Debug)]
 pub(crate) struct DployConfig {
-    pub(crate) network: Option<bool>,
     pub(crate) repo_url: Option<String>,
     pub(crate) deploy_path: Option<String>,
     pub(crate) tag: Option<String>,
@@ -54,7 +53,6 @@ pub(crate) fn load_dploy_config<P: AsRef<Path>>(
 
     if !file_path.exists() {
         return Ok(DployConfig {
-            network: None,
             repo_url: None,
             deploy_path: None,
             tag: None,
@@ -115,7 +113,6 @@ pub(crate) fn merge_vars(
 
 fn overwrite_config(root_config: DployConfig, overwrite_config: DployConfig) -> DployConfig {
     DployConfig {
-        network: overwrite_option(root_config.network, overwrite_config.network),
         repo_url: overwrite_option(root_config.repo_url, overwrite_config.repo_url),
         deploy_path: overwrite_option(root_config.deploy_path, overwrite_config.deploy_path),
         tag: overwrite_option(root_config.tag, overwrite_config.tag),
