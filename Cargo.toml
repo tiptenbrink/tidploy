@@ -4,7 +4,7 @@ version = "0.12.0"
 edition = "2021"
 license-file="LICENSE"
 authors=["Tip ten Brink"]
-description="Simple deployment tool for deploying small deploy units and loading secrets"
+description="Simple deployment tool for deploying small applications and loading secrets"
 repository="https://github.com/tiptenbrink/tidploy"
 readme="README.md"
 

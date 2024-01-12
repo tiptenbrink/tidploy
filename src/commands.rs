@@ -30,21 +30,22 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
+    /// Contexts other than git-remote (default) are not fully supported.
     #[arg(long, value_enum, global = true)]
     context: Option<StateContext>,
 
-    #[arg(long, global = true)]
-    local: Option<bool>,
-
-    /// Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it.
+    /// Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. 
+    /// Set to 'default' to not set it.
     /// Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url'
-    /// For infering, it looks at the URL set to the 'origin' remote
+    /// For infering, it looks at the URL set to the 'origin' remote.
     #[arg(short, long, global = true)]
     repo: Option<String>,
 
+    /// The git reference (commit or tag) to use.
     #[arg(short, long, global = true)]
     tag: Option<String>,
 
+    /// The path inside the repository that should be used as the primary config source.
     #[arg(short, long, global = true)]
     deploy_pth: Option<String>,
 }
@@ -72,14 +73,17 @@ enum Commands {
         #[arg(short, num_args = 2)]
         variables: Vec<String>,
     },
-    /// Run an entrypoint using the password set for a specific repo and stage 'deploy', can be used after download
+    /// Run an entrypoint or archive created by download/deploy and load secrets
     Run {
         #[arg(short = 'x', long = "exe")]
         executable: Option<String>,
 
+        /// Variables to load. Supply as many pairs of <key> <env var name> as needed.
         #[arg(short, num_args = 2)]
         variables: Vec<String>,
 
+        /// Give the exact name of the archive using the format:
+        /// <repo name final path element without extension>_<commit sha>_<base64url-encoded url without name>
         #[arg(long)]
         archive: Option<String>,
     },

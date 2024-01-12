@@ -1,121 +1,103 @@
 This CLI tool is designed to make it easy to deploy small applications.
 
-Only works on Linux. 
-
-NOTE: The documentation is currently outdated, but is mostly accurate for v0.8.0 and v0.9.0.
+Designed for Unix-like deployments. Assumes the existence of `tar` and `git` on your system. Windows file paths might especially be a problem.
 
 ## Deploy unit example
 
-### tidploy.json
+### tidploy.toml
 
-```jsonc
-{
-    # optional, defaults to false
-    "dployer": true,
-    "info": {
-        "latest": "main"
-    },
-    "secrets": {
-        # required if dployer set to true, otherwise optional
-        "dployer_env": "BWS_ACCESS_TOKEN",
-        "ids": [
-            "<secret id>",
-            "<secret id>",
-        ]
-    }
-}
+```toml
+exe_name = "entrypoint.sh"
 
+[[vars]]
+env_name = "BWS_ACCESS_TOKEN"
+key = "bws"
 ```
 
-### With dployer
+It will run `entrypoint.sh` and try to load the secret with key `bws` and load it as an environment variable named `BWS_ACCESS_TOKEN`. 
 
-**Required files**
+## Run examples
 
-* dployer.sh
-* tidploy.json/toml
+If you want to save a globally scoped secret, run:
 
-The password set for the `deploy` stage is passed as an environment variable with key equal to `secrets.deployer_env`.
+```tidploy secret <secret name> --context none```
 
-### With Bitwarden Secrets Manager integration
+You can scope it to a repository URL by adding `-r <repository url>` to the command.
 
-**Required files**
+If you then have a file called `abc.sh`:
 
-* entrypoint.sh
-* tidploy.json/toml
+```
+#!/bin/bash
 
-If dployer is not specified, it is assumed that the set password for the `deploy` stage is the `BWS_ACCESS_TOKEN`. Secrets in `secrets.ids` will be loaded and passed to the `entrypoint.sh` as environment variables.
+echo $ABCD
+```
+
+And you run:
+
+```
+tidploy run --context none -x abc.sh -v <secret name> ABCD
+```
+
+The file will be run and print the value you provided to the secret.
 
 ## Help
 
 ```text
-Simple deployment tool for deploying small deploy units and loading secrets
+Simple deployment tool for deploying small applications and loading secrets
 
 Usage: tidploy [OPTIONS] <COMMAND>
 
 Commands:
-  auth      Save authentication details for specific stage until reboot
+  secret    Save secret with key until reboot
   download  Download tag or version with specific env, run automatically if using deploy
   deploy    Deploy tag or version with specific env
   run       Run an entrypoint using the password set for a specific repo and stage 'deploy', can be used after download
   help      Print this message or the help of the given subcommand(s)
 
 Options:
-      --context <CONTEXT>        [possible values: none, git]
-      --network <NETWORK>        [possible values: true, false]
+      --context <CONTEXT>        Contexts other than git-remote (default) are not fully supported [possible values: none, git-remote, git-local]
   -r, --repo <REPO>              Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it. Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url' For infering, it looks at the URL set to the 'origin' remote
-  -t, --tag <TAG>                
-  -d, --deploy-pth <DEPLOY_PTH>  
+  -t, --tag <TAG>                The git reference (commit or tag) to use
+  -d, --deploy-pth <DEPLOY_PTH>  The path inside the repository that should be used as the primary config source
   -h, --help                     Print help
   -V, --version                  Print version
 ```
 
-### Auth
+### Save secret
 
 ```text
-Save authentication details for specific stage until reboot
+Save secret with key until reboot
 
-Usage: tidploy auth [OPTIONS] <KEY>
+Usage: tidploy secret [OPTIONS] <KEY>
 
 Arguments:
   <KEY>  
 
 Options:
-      --context <CONTEXT>        [possible values: none, git]
-      --network <NETWORK>        [possible values: true, false]
+      --context <CONTEXT>        Contexts other than git-remote (default) are not fully supported [possible values: none, git-remote, git-local]
   -r, --repo <REPO>              Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it. Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url' For infering, it looks at the URL set to the 'origin' remote
-  -t, --tag <TAG>                
-  -d, --deploy-pth <DEPLOY_PTH>  
+  -t, --tag <TAG>                The git reference (commit or tag) to use
+  -d, --deploy-pth <DEPLOY_PTH>  The path inside the repository that should be used as the primary config source
   -h, --help                     Print help
 ```
 
 
 ### Download
 
+NOTE: This command is not fully functioning.
+
 ```text
-Download tag or version with specific env
+Download tag or version with specific env, run automatically if using deploy
 
-Usage: tidploy download [OPTIONS] <ENV> [GIT_REF]
-
-Arguments:
-  <ENV>
-          Environment
-
-          Possible values:
-          - localdev:   Local development environment
-          - staging:    Staging environment
-          - production: Production environment
-
-  [GIT_REF]
-          Version or tag to download
+Usage: tidploy download [OPTIONS]
 
 Options:
-  -r, --repo <REPO>
-          Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
-          
-          [default: default_git_root_origin]
-
-  -h, --help
-          Print help (see a summary with '-h')
+      --repo-only                
+      --context <CONTEXT>        Contexts other than git-remote (default) are not fully supported [possible values: none, git-remote, git-local]
+  -r, --repo <REPO>              Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it. Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url' For infering, it looks at the URL set to the 'origin' remote
+  -t, --tag <TAG>                The git reference (commit or tag) to use
+  -d, --deploy-pth <DEPLOY_PTH>  The path inside the repository that should be used as the primary config source
+  -h, --help                     Print help
 ```
 
 
@@ -124,32 +106,32 @@ Options:
 ```text
 Deploy tag or version with specific env
 
-Usage: tidploy deploy [OPTIONS] <ENV> [GIT_REF]
-
-Arguments:
-  <ENV>
-          Environment
-
-          Possible values:
-          - localdev:   Local development environment
-          - staging:    Staging environment
-          - production: Production environment
-
-  [GIT_REF]
-          Version or tag to deploy. Omit to deploy latest for env
+Usage: tidploy deploy [OPTIONS]
 
 Options:
-  -r, --repo <REPO>
-          Git repository URL, defaults to "origin" remote of current Git root, looks for TI_DPLOY_REPO_URL env variable if not set. Set to 'git_root_origin' to ignore environment variable and only look for current repository origin
-          
-          [default: default_git_root_origin]
+  -x, --exe <EXECUTABLE>          
+      --no-create                 Don't clone a fresh repository. Will fail if it does not exist. WARNING: The repository might not be up-to-date
+  -v <VARIABLES> <VARIABLES>      Variables to load. Supply as many pairs of <key> <env var name> as needed
+      --context <CONTEXT>         Contexts other than git-remote (default) are not fully supported [possible values: none, git-remote, git-local]
+  -r, --repo <REPO>               Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it. Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url' For infering, it looks at the URL set to the 'origin' remote
+  -t, --tag <TAG>                 The git reference (commit or tag) to use
+  -d, --deploy-pth <DEPLOY_PTH>   The path inside the repository that should be used as the primary config source
+  -h, --help                      Print help
+```
 
-  -l, --latest
-          Whether to get the latest version of the ref (default: true)
+### Run
 
-  -c, --recreate
-          Whether to recreate the database (default: false)
+```text
+Run an entrypoint or archive created by download/deploy and load secrets
 
-  -h, --help
-          Print help (see a summary with '-h')
+Usage: tidploy run [OPTIONS]
+
+Options:
+  -x, --exe <EXECUTABLE>          
+  -v <VARIABLES> <VARIABLES>      Variables to load. Supply as many pairs of <key> <env var name> as needed
+      --archive <ARCHIVE>         Give the exact name of the archive using the format: <repo name final path element without extension>_<commit sha>_<base64url-encoded url without name>
+      --context <CONTEXT>         Contexts other than git-remote (default) are not fully supported [possible values: none, git-remote, git-local]
+  -r, --repo <REPO>               Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it. Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url' For infering, it looks at the URL set to the 'origin' remote
+  -t, --tag <TAG>                 The git reference (commit or tag) to use
+  -d, --deploy-pth <DEPLOY_PTH>   The path ins
 ```
