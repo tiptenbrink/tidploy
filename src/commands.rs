@@ -34,9 +34,8 @@ struct Cli {
     #[arg(long, value_enum, global = true)]
     context: Option<StateContext>,
 
-    /// UNFINISHED.
     #[arg(long, global = true)]
-    network: Option<bool>,
+    local: Option<bool>,
 
     /// Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. Set to 'default' to not set it.
     /// Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url'
@@ -65,6 +64,10 @@ enum Commands {
     Deploy {
         #[arg(short = 'x', long = "exe")]
         executable: Option<String>,
+
+        /// Don't clone a fresh repository. Will fail if it does not exist. WARNING: The repository might not be up-to-date.
+        #[arg(long)]
+        no_create: bool,
 
         /// Variables to load. Supply as many pairs of <key> <env var name> as needed.
         #[arg(short, num_args = 2)]
@@ -99,39 +102,9 @@ enum ErrorRepr {
     Repo(#[from] RepoError),
 }
 
-enum CreateRepo {
-    Clone(Repo),
-    Path(RelativePathBuf),
-}
-
-fn create_repo(network: bool, create_repo: CreateRepo) -> Result<PathBuf, RepoError> {
-    let repo = match create_repo {
-        CreateRepo::Clone(repo) => {
-            if !network {
-                return Err(RepoError::NeedsNetwork);
-            }
-
-            repo
-        }
-        CreateRepo::Path(source_path) => {
-            let source_path = source_path.normalize();
-            let url: String = source_path.clone().into();
-            let name = source_path
-                .file_name()
-                .ok_or(RepoParseError::InvalidPath(source_path.clone().into()))?
-                .to_owned();
-            let encoded_url = B64USNP.encode(&url);
-
-            Repo {
-                name,
-                url,
-                encoded_url,
-            }
-        }
-    };
-
+fn create_repo(repo: Repo) -> Result<PathBuf, RepoError> {
     let tmp_dir = Path::new(TMP_DIR);
-    let repo_name = format!("{}_{}", repo.name, repo.encoded_url);
+    let repo_name = repo.dir_name();
     let repo_path = tmp_dir.join(&repo_name);
 
     repo_clone(tmp_dir, &repo_name, &repo.url)?;
@@ -189,7 +162,6 @@ fn prepare_from_state(state: &State, repo_path: &Path) -> Result<(), ErrorRepr> 
 
 fn download_command(
     cli_state: CliEnvState,
-    network: bool,
     repo: Repo,
     repo_only: bool,
 ) -> Result<Option<State>, ErrorRepr> {
@@ -197,11 +169,47 @@ fn download_command(
     let download_span = span!(Level::DEBUG, "download");
     let _dl_enter = download_span.enter();
 
-    let repo_path = create_repo(network, CreateRepo::Clone(repo)).map_err(ErrorRepr::Repo)?;
+    let repo_path = create_repo(repo).map_err(ErrorRepr::Repo)?;
 
     if repo_only {
         return Ok(None);
     }
+
+    // The preswitch stage creates state from the recently created repo, determining which commit sha to use for
+    // the checkout and which deploy path to use
+    let head_span = span!(Level::DEBUG, "preswitch").entered();
+    let state =
+        create_state_create(cli_state.clone(), Some(&repo_path), true).map_err(ErrorRepr::Load)?;
+    head_span.exit();
+
+    let state = switch_to_revision(cli_state, state, &repo_path)?;
+
+    prepare_from_state(&state, &repo_path)?;
+
+    Ok(Some(state))
+}
+
+fn prepare_command(
+    cli_state: CliEnvState,
+    no_create: bool,
+    repo: Repo,
+) -> Result<Option<State>, ErrorRepr> {
+    // This will be exited when `download_command` returns
+    let prepare_san = span!(Level::DEBUG, "prepare");
+    let _prep_enter = prepare_san.enter();
+
+    let repo_path = if no_create {
+        let tmp_dir = Path::new(TMP_DIR);
+        let repo_path = tmp_dir.join(repo.dir_name());
+
+        if !repo_path.exists() {
+            return Err(RepoError::NotCreated.into())
+        }
+
+        repo_path
+    } else {
+        create_repo(repo).map_err(ErrorRepr::Repo)?
+    };
 
     // The preswitch stage creates state from the recently created repo, determining which commit sha to use for
     // the checkout and which deploy path to use
@@ -245,7 +253,6 @@ pub(crate) fn run_cli() -> Result<(), Error> {
 
     let cli_state = CliEnvState {
         context: args.context,
-        network: args.network,
         repo_url: args.repo,
         deploy_path: args.deploy_pth,
         tag: args.tag,
@@ -266,26 +273,26 @@ pub(crate) fn run_cli() -> Result<(), Error> {
         Commands::Download { repo_only } => {
             let state =
                 create_state_create(cli_state.clone(), None, false).map_err(ErrorRepr::Load)?;
-            download_command(cli_state, state.network, state.repo, repo_only)?;
+            download_command(cli_state, state.repo, repo_only)?;
 
             Ok(())
         }
         Commands::Deploy {
             executable,
+            no_create,
             variables,
         } => {
             // We drop the dpl_enter when exiting this scope
             let deploy_span = span!(Level::DEBUG, "deploy");
             let _dpl_enter = deploy_span.enter();
 
-            // This one we must manually exit so we use 'entered'. The predownload stage determines the "network" and "repo".
-            let enter_dl = span!(Level::DEBUG, "predownload").entered();
+            // This one we must manually exit so we use 'entered'. The preprepare stage determines the "repo".
+            let enter_dl = span!(Level::DEBUG, "preprepare").entered();
             let state =
                 create_state_create(cli_state.clone(), None, false).map_err(ErrorRepr::Load)?;
             enter_dl.exit();
 
-            let state =
-                download_command(cli_state.clone(), state.network, state.repo, false)?.unwrap();
+            let state = prepare_command(cli_state.clone(), no_create, state.repo)?.unwrap();
 
             let tmp_dir = Path::new(TMP_DIR);
             let deploy_encoded = B64USNP.encode(state.deploy_path.as_str());
@@ -302,7 +309,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             let target_path_root = tmp_dir.join(archive_name);
             let target_path = state.deploy_path.to_path(target_path_root);
             let state =
-                create_state_run(cli_state, executable, variables, Some(&target_path), true)
+                create_state_run(cli_state, executable, variables, Some(&target_path), true, false)
                     .map_err(ErrorRepr::Load)?;
 
             let state = extra_envs(state);
@@ -339,12 +346,13 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             };
             let path_ref = path.as_deref();
 
-            let state = create_state_run(cli_state, executable, variables, path_ref, true)
+            let state = create_state_run(cli_state, executable, variables, path_ref, true, true)
                 .map_err(ErrorRepr::Load)?;
 
             let state = extra_envs(state);
-
-            run_entrypoint(state.current_dir, &state.exe_name, state.envs)
+            
+            let entrypoint_dir = state.deploy_path.to_path(state.current_dir);
+            run_entrypoint(entrypoint_dir, &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;
 
             Ok(())

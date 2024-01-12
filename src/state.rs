@@ -22,7 +22,8 @@ use tracing::{debug, span, Level};
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub(crate) enum StateContext {
     None,
-    Git,
+    GitRemote,
+    GitLocal
 }
 
 impl StateContext {
@@ -36,15 +37,15 @@ impl StateContext {
     fn from_str(s: &str) -> Option<StateContext> {
         match s {
             "none" => Some(StateContext::None),
-            "git" => Some(StateContext::Git),
+            "git_local" => Some(StateContext::GitLocal),
+            "git_remote" => Some(StateContext::GitRemote),
             _ => None,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct State {
-    pub(crate) network: bool,
     pub(crate) context: StateContext,
     pub(crate) repo: Repo,
     pub(crate) deploy_path: RelativePathBuf,
@@ -75,7 +76,7 @@ pub(crate) enum LoadError {
     Auth(#[from] AuthError),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct CliEnvRunState {
     envs: Vec<ConfigVar>,
     exe_name: Option<String>,
@@ -84,7 +85,6 @@ struct CliEnvRunState {
 #[derive(Clone, Debug)]
 pub(crate) struct CliEnvState {
     pub(crate) context: Option<StateContext>,
-    pub(crate) network: Option<bool>,
     pub(crate) repo_url: Option<String>,
     pub(crate) deploy_path: Option<String>,
     pub(crate) tag: Option<String>,
@@ -121,7 +121,6 @@ fn load_state_run_vars() -> CliEnvRunState {
 fn load_state_vars() -> CliEnvState {
     let mut env_state = CliEnvState {
         context: None,
-        network: None,
         repo_url: None,
         deploy_path: None,
         tag: None,
@@ -130,9 +129,9 @@ fn load_state_vars() -> CliEnvState {
     for (k, v) in env::vars() {
         match k.as_str() {
             "TIDPLOY_REPO" => env_state.repo_url = Some(v),
-            "TIDPLOY_NETWORK" => {
-                env_state.network = Some(!v.is_empty() && v != "0" && v.to_lowercase() != "false")
-            }
+            // "TIDPLOY_NETWORK" => {
+            //     env_state.network = Some(!v.is_empty() && v != "0" && v.to_lowercase() != "false")
+            // }
             "TIDPLOY_TAG" => env_state.tag = Some(v),
             "TIDPLOY_PTH" => env_state.deploy_path = Some(v),
             _ => {}
@@ -160,7 +159,7 @@ fn merge_state(config: &DployConfig, envs: CliEnvState, cli: CliEnvState) -> Cli
     CliEnvState {
         // Already set
         context: None,
-        network: merge_options(config.network, envs.network, cli.network),
+        // network: merge_options(config.network, envs.network, cli.network),
         repo_url: merge_options(config.repo_url.clone(), envs.repo_url, cli.repo_url),
         deploy_path: merge_options(
             config.deploy_path.clone(),
@@ -190,7 +189,8 @@ fn merge_run_state(
 #[derive(Debug)]
 enum ReadRepoMethod {
     Value(String),
-    CurDirGitRoot,
+    GitRoot,
+    GitRootRemote,
     Default,
 }
 
@@ -201,11 +201,12 @@ fn set_state(
     load_tag: bool,
 ) -> Result<(), LoadError> {
     let read_repo_url_method = match merged_state.repo_url {
-        Some(value) if value == DEFAULT_INFER => ReadRepoMethod::CurDirGitRoot,
+        Some(value) if value == DEFAULT_INFER => ReadRepoMethod::GitRoot,
         Some(value) => ReadRepoMethod::Value(value),
         None => match state.context {
             StateContext::None => ReadRepoMethod::Default,
-            StateContext::Git => ReadRepoMethod::CurDirGitRoot,
+            StateContext::GitRemote => ReadRepoMethod::GitRootRemote,
+            StateContext::GitLocal => ReadRepoMethod::GitRoot
         },
     };
     debug!(
@@ -216,7 +217,7 @@ fn set_state(
     let repo_url = match read_repo_url_method {
         ReadRepoMethod::Value(value) => value,
         ReadRepoMethod::Default => DEFAULT.to_owned(),
-        ReadRepoMethod::CurDirGitRoot => git_root_origin_url(&state.current_dir)?,
+        ReadRepoMethod::GitRootRemote | _ => git_root_origin_url(&state.current_dir)?,
     };
 
     match repo_url.as_str() {
@@ -232,11 +233,6 @@ fn set_state(
             state.repo = parsed_repo_url
         }
     }
-
-    if let Some(value) = merged_state.network {
-        debug!("Set use network to {}.", value);
-        state.network = value
-    };
 
     let tag = match merged_state.tag {
         Some(value) => value,
@@ -321,6 +317,7 @@ pub(crate) fn create_state_run(
     envs: Vec<String>,
     path: Option<&Path>,
     load_tag: bool,
+    converge: bool
 ) -> Result<State, LoadError> {
     // Exits when the function returns
     let run_state_span = span!(Level::DEBUG, "run_state");
@@ -331,7 +328,12 @@ pub(crate) fn create_state_run(
         envs: parse_cli_envs(envs),
     };
     debug!("Parsed CLI envs as {:?}", cli_run_state);
-    create_state(cli_state, Some(cli_run_state), path, load_tag)
+    if !converge {
+        create_state(cli_state, Some(cli_run_state), path, load_tag)
+    } else {
+        state_converge(None, cli_state, Some(cli_run_state), path, load_tag)
+    }
+    
 }
 
 /// Create a new state, merging the cli_state, env var state and config state and potentially loading it from the
@@ -362,8 +364,7 @@ fn create_state(
     // deploy path to root of the repository and _tidploy_default for commit and exe name.
     // current_dir is either the provided path or the directory that the command is called from
     let mut state = State {
-        network: true,
-        context: StateContext::Git,
+        context: StateContext::GitRemote,
         repo: Repo {
             name: DEFAULT.to_owned(),
             url: "".to_owned(),
@@ -400,19 +401,19 @@ fn create_state(
                     var: "TIDPLOY_CONTEXT".to_owned(),
                 })
             }
-            _ => StateContext::Git,
+            _ => StateContext::GitRemote,
         },
         Some(cli_context) => cli_context,
     };
     debug!("Loaded state context as {:?}", state.context);
 
     let dploy_config = match state.context {
-        StateContext::Git => {
+        StateContext::GitRemote => {
             let git_root_relative = relative_to_git_root()?;
             let git_root_relative = RelativePathBuf::from_path(git_root_relative).unwrap();
             traverse_configs(state.current_dir.clone(), git_root_relative)?
         }
-        StateContext::None => {
+        StateContext::None | _ => {
             debug!("Loading config only at current dir.");
             load_dploy_config(state.current_dir.clone()).map_err(|source| ConfigError {
                 source,
@@ -434,6 +435,27 @@ fn create_state(
         set_state(&mut state, merged_state, Some(merged_run_state), load_tag)?;
     } else {
         set_state(&mut state, merged_state, None, load_tag)?;
+    }
+
+    Ok(state)
+}
+
+fn state_converge(initial_state: Option<State>, cli_state: CliEnvState, cli_run_state: Option<CliEnvRunState>, path: Option<&Path>, load_tag: bool) -> Result<State, LoadError> {
+    let converge_span = span!(Level::DEBUG, "converge");
+    let _enter = converge_span.enter();
+    let max_converge = 5;
+    let i = 0;
+    
+    let mut state = initial_state.map(Ok).unwrap_or_else(|| create_state(cli_state.clone(), cli_run_state.clone(), path, load_tag))?;
+    
+    while i < max_converge {
+        debug!("Converging for the {}th time with path {:?}.", i, path);
+        let new_state = create_state(cli_state.clone(), cli_run_state.clone(), Some(&state.current_dir), load_tag)?;
+        if state == new_state {
+            state = new_state;
+            break;
+        }
+        state = new_state
     }
 
     Ok(state)

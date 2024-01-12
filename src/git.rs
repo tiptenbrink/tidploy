@@ -65,43 +65,58 @@ pub(crate) fn relative_to_git_root() -> Result<String, GitError> {
         .to_owned())
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct Repo {
     pub(crate) name: String,
     pub(crate) encoded_url: String,
     pub(crate) url: String,
 }
 
-pub(crate) fn parse_repo_url(url: String) -> Result<Repo, RepoParseError> {
-    let split_parts: Vec<&str> = url.split('/').collect();
-
-    if split_parts.len() <= 1 {
-        return Err(RepoParseError::InvalidURL(url));
+impl Repo {
+    pub(crate) fn dir_name(&self) -> String {
+        return format!("{}_{}", self.name, self.encoded_url)
     }
+}
+
+/// Parse a repo URL to extract a "name" from it, as well as encode the part before the name to still uniquely 
+/// identify it. Only supports forward slashes as path seperator.
+pub(crate) fn parse_repo_url(url: String) -> Result<Repo, RepoParseError> {
+    let url = url.strip_suffix("/").unwrap_or(&url).to_owned();
+    // We want the final part, after the slash, as the "file name"
+    let split_parts: Vec<&str> = url.split('/').collect();
+    
+    // If last does not exist then the string is empty so invalid
     let last_part = *split_parts
         .last()
-        .ok_or(RepoParseError::InvalidURL(url.clone()))?;
+        .ok_or(RepoParseError::InvalidURL(url.to_owned()))?;
 
-    let first_parts = split_parts
-        .get(0..split_parts.len() - 1)
-        .map(|a| a.to_vec().join("/"));
-
-    let encoded_url = if let Some(pre_part) = first_parts {
-        debug!("Encoding parsed url pre_part: {}", pre_part);
-        B64USNP.encode(pre_part)
+    // The first part will contain slashes and potentially other characters we don't want in a file name, so we
+    // encode it
+    let encoded_url = if split_parts.len() <= 1 {
+        // In this case the part before the slash is empty so no encoding necessary
+        "".to_owned()
     } else {
-        return Err(RepoParseError::InvalidURL(url));
+        // We get everything except the last part and then rejoin them using the slash we originally split them with
+        let pre_part = split_parts
+        .get(0..split_parts.len() - 1).unwrap()
+        .join("/");
+        debug!("Encoding parsed url pre_part: {}", pre_part);
+        // base64urlsafe-encode
+        B64USNP.encode(pre_part)
     };
 
+    // In case there is a file extension (such as `.git`), we don't want that part of the name
     let split_parts_dot: Vec<&str> = last_part.split('.').collect();
-    if split_parts_dot.len() <= 1 {
-        return Err(RepoParseError::InvalidURL(url));
-    }
-
-    let name = (*split_parts_dot
-        .first()
-        .ok_or(RepoParseError::InvalidURL(url.clone()))?)
-    .to_owned();
+    let name = if split_parts_dot.len() <= 1 {
+        // In this case no "." exists and we return just the entire "file name"
+        last_part.to_owned()
+    } else {
+        // We get only the part that comes before the first .
+        (*split_parts_dot
+            .first()
+            .ok_or(RepoParseError::InvalidURL(url.clone()))?)
+        .to_owned()
+    };
 
     Ok(Repo {
         name,
@@ -233,8 +248,9 @@ pub(crate) fn checkout(repo_path: &Path, commit_sha: &str) -> Result<(), RepoErr
         .stdout(Stdio::piped())
         .output()
         .map_err(|e| GitError::from_io(e, format!("IO failure for git clean {:?}!", repo_path)))?;
-
-    sp.success("Commit checked out!");
+    
+    let success_msg = format!("Checked out {}!", commit_sha);
+    sp.success(&success_msg);
 
     Ok(())
 }
@@ -247,7 +263,7 @@ pub(crate) fn checkout_path(repo_path: &Path, deploy_path: &RelativePath) -> Res
     let mut sp = Spinner::new(
         spinners::Line,
         format!(
-            "Sparse-checkout repository to deploy path {:?}...",
+            "Sparse-checkout repository to deploy path {}...",
             deploy_path
         ),
         None,
@@ -267,7 +283,35 @@ pub(crate) fn checkout_path(repo_path: &Path, deploy_path: &RelativePath) -> Res
             )
         })?;
 
-    sp.success("Sparse checked out repository to deploy path!");
+    let success_msg = format!("Sparse checked out repository to deploy path {}!", deploy_path);
+    sp.success(&success_msg);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_repo_url;
+
+    #[test]
+    fn parse_test_git() {
+        let git_url = "https://github.com/tiptenbrink/tidploy.git".to_owned();
+        let encoded_url = "aHR0cHM6Ly9naXRodWIuY29tL3RpcHRlbmJyaW5r".to_owned();
+        let name = "tidploy".to_owned();
+        assert_eq!(parse_repo_url(git_url.clone()).unwrap().encoded_url, encoded_url);
+        assert_eq!(parse_repo_url(git_url.clone()).unwrap().name, name);
+        assert_eq!(parse_repo_url(git_url.clone()).unwrap().url, git_url);
+    }
+
+    #[test]
+    fn parse_test_local() {
+        let path = "/home/tiptenbrink/tidploy/".to_owned();
+        let path_no_slash = "/home/tiptenbrink/tidploy".to_owned();
+        let encoded_url = "L2hvbWUvdGlwdGVuYnJpbms".to_owned();
+        let name = "tidploy".to_owned();
+        assert_eq!(parse_repo_url(path.clone()).unwrap().encoded_url, encoded_url);
+        assert_eq!(parse_repo_url(path.clone()).unwrap().name, name);
+        assert_eq!(parse_repo_url(path).unwrap().url, path_no_slash);
+        assert_eq!(parse_repo_url(path_no_slash.clone()).unwrap().url, path_no_slash);
+    }
 }
