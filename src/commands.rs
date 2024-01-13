@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::archives::{extract_archive, make_archive};
 use crate::errors::{ProcessError, RepoError};
+use crate::filesystem::get_dirs;
 use crate::git::{checkout, checkout_path, repo_clone, Repo};
 use crate::secret::{secret_command, AuthError};
 
@@ -15,14 +16,14 @@ use clap::{Parser, Subcommand};
 
 use std::fmt::Debug;
 use std::time::Instant;
+
 use thiserror::Error as ThisError;
 use tracing::span;
 use tracing::{debug, Level};
 
 pub(crate) const DEFAULT_INFER: &str = "default_infer";
-pub(crate) const TIDPLOY_DEFAULT: &str = "_tidploy_default";
+pub(crate) const TIDPLOY_DEFAULT: &str = "tidploy_default";
 pub(crate) const DEFAULT: &str = "default";
-pub(crate) const TMP_DIR: &str = "/tmp/tidploy";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -34,7 +35,7 @@ struct Cli {
     #[arg(long, value_enum, global = true)]
     context: Option<StateContext>,
 
-    /// Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository. 
+    /// Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository.
     /// Set to 'default' to not set it.
     /// Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url'
     /// For infering, it looks at the URL set to the 'origin' remote.
@@ -106,11 +107,11 @@ enum ErrorRepr {
 }
 
 fn create_repo(repo: Repo) -> Result<PathBuf, RepoError> {
-    let tmp_dir = Path::new(TMP_DIR);
+    let cache_dir = get_dirs().cache.as_path();
     let repo_name = repo.dir_name();
-    let repo_path = tmp_dir.join(&repo_name);
+    let repo_path = cache_dir.join(&repo_name);
 
-    repo_clone(tmp_dir, &repo_name, &repo.url)?;
+    repo_clone(cache_dir, &repo_name, &repo.url)?;
 
     Ok(repo_path)
 }
@@ -144,8 +145,8 @@ fn switch_to_revision(
 }
 
 fn prepare_from_state(state: &State, repo_path: &Path) -> Result<(), ErrorRepr> {
-    let tmp_dir = Path::new(TMP_DIR);
-    let archives = tmp_dir.join("archives");
+    let cache_dir = get_dirs().cache.as_path();
+    let archives = cache_dir.join("archives");
     let deploy_encoded = B64USNP.encode(state.deploy_path.as_str());
     let archive_name = format!(
         "{}_{}_{}",
@@ -154,7 +155,7 @@ fn prepare_from_state(state: &State, repo_path: &Path) -> Result<(), ErrorRepr> 
 
     make_archive(
         &archives,
-        tmp_dir,
+        cache_dir,
         repo_path.file_name().unwrap().to_string_lossy().as_ref(),
         &archive_name,
     )
@@ -202,7 +203,7 @@ fn prepare_command(
     let _prep_enter = prepare_san.enter();
 
     let repo_path = if no_create {
-        let tmp_dir = Path::new(TMP_DIR);
+        let tmp_dir = get_dirs().cache.as_path();
         let repo_path = tmp_dir.join(repo.dir_name());
 
         if !repo_path.exists() {
@@ -296,14 +297,14 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             enter_dl.exit();
 
             let state = prepare_command(cli_state.clone(), no_create, state.repo)?.unwrap();
-
-            let tmp_dir = Path::new(TMP_DIR);
+            let cache_dir = get_dirs().cache.as_path();
+            let tmp_dir = get_dirs().tmp.as_path();
             let deploy_encoded = B64USNP.encode(state.deploy_path.as_str());
             let archive_name = format!(
                 "{}_{}_{}",
                 state.repo.name, state.commit_sha, deploy_encoded
             );
-            let archive_path = tmp_dir
+            let archive_path = cache_dir
                 .join("archives")
                 .join(&archive_name)
                 .with_extension("tar.gz");
@@ -331,21 +332,20 @@ pub(crate) fn run_cli() -> Result<(), Error> {
 
             // Only loads archive if it is given, otherwise path is None
             let path = if let Some(archive) = archive {
-                let tmp_dir = Path::new(TMP_DIR);
-                let archive_path = tmp_dir
+                let cache_dir = get_dirs().cache.as_path();
+                let archive_path = cache_dir
                     .join("archives")
                     .join(&archive)
                     .with_extension("tar.gz");
-                // Running archives doesn't fully work as it doesn't yet know how to retrieve the deploy path
-                // Splitting by '_' doesn't work easily as base64url includes '_' chars
 
-                extract_archive(&archive_path, tmp_dir, &archive).map_err(ErrorRepr::Repo)?;
-                let archive_path = tmp_dir.join(&archive);
-                debug!("Extracted and loaded archive at {:?}", &archive_path);
+                let tmp_dir = get_dirs().tmp.as_path();
+                let extracted_path =
+                    extract_archive(&archive_path, tmp_dir, &archive).map_err(ErrorRepr::Repo)?;
+                debug!("Extracted and loaded archive at {:?}", &extracted_path);
 
-                let state = create_state_create(cli_state.clone(), Some(&archive_path), true)
+                let state = create_state_create(cli_state.clone(), Some(&extracted_path), true)
                     .map_err(ErrorRepr::Load)?;
-                let target_path = state.deploy_path.to_path(&archive_path);
+                let target_path = state.deploy_path.to_path(&extracted_path);
 
                 Some(target_path)
             } else {

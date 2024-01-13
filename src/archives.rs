@@ -57,9 +57,9 @@ pub(crate) fn make_archive(
 
 pub(crate) fn extract_archive(
     archive_path: &Path,
-    current_dir: &Path, // TMP DIR
+    current_dir: &Path,
     target_name: &str,
-) -> Result<(), RepoError> {
+) -> Result<PathBuf, RepoError> {
     let archive_path_name = archive_path.to_str().ok_or(FileError {
         msg: format!("Cannot represent path {:?} as string!", archive_path),
         source: FileErrorKind::InvalidPath,
@@ -110,5 +110,5 @@ pub(crate) fn extract_archive(
 
     println!("Extracted archive.");
 
-    Ok(())
+    Ok(target_path)
 }

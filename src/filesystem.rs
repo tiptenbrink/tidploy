@@ -1,4 +1,5 @@
-use std::{env, io::Error as StdIOError, path::PathBuf};
+use directories::ProjectDirs;
+use std::{env, io::Error as StdIOError, path::PathBuf, sync::OnceLock};
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -18,4 +19,21 @@ pub(crate) enum FileErrorKind {
 
 pub(crate) fn get_current_dir() -> Result<PathBuf, FileErrorKind> {
     env::current_dir().map_err(FileErrorKind::IO)
+}
+
+pub(crate) struct Dirs {
+    pub(crate) cache: PathBuf,
+    pub(crate) tmp: PathBuf,
+}
+
+pub(crate) fn get_dirs() -> &'static Dirs {
+    static DIRS: OnceLock<Dirs> = OnceLock::new();
+    DIRS.get_or_init(|| {
+        let project_dirs = ProjectDirs::from("", "", "tidploy").unwrap();
+
+        let cache = project_dirs.cache_dir().to_owned();
+        let tmp = env::temp_dir();
+
+        Dirs { cache, tmp }
+    })
 }
