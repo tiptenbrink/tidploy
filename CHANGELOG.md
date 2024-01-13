@@ -1,9 +1,12 @@
 # Changelog
 
-## 0.13.0
+## 0.13.0 2024-01-13
 
 * Update keyring-rs, more explicitly state platform support. Linux has full support, macOS and Windows are untested but could work.
-
+* Use cache dir to save downloads, use tmp only for the extract target location
+* Fix config path traversal
+* More consistent deploy path/root path usage
+* Git local should work now as a context (not yet fully tested)
 
 ## 0.12.1 2024-01-12
 
