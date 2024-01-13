@@ -1,70 +1,15 @@
 use crate::errors::{GitError, RepoError, RepoParseError};
 
-use crate::process::process_out;
-
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
 use base64::Engine;
 use relative_path::RelativePath;
 use spinoff::{spinners, Spinner};
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use std::process::{Command as Cmd, Stdio};
 use tracing::debug;
-
-pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
-    let git_origin_output = Cmd::new("git")
-        .current_dir(path)
-        .arg("config")
-        .arg("--get")
-        .arg("remote.origin.url")
-        .output()
-        .map_err(|e| {
-            GitError::from_io(
-                e,
-                "IO failure for git config get remote.origin.url!".to_owned(),
-            )
-        })?;
-
-    if !git_origin_output.status.success() {
-        return Err(GitError::from_f(
-            git_origin_output.status,
-            "Git get remote origin failed!".to_owned(),
-        ));
-    }
-
-    let url = String::from_utf8(git_origin_output.stdout)
-        .map_err(|e| GitError::from_dec(e, "Failed to decode Git origin output!".to_owned()))?
-        .trim_end()
-        .to_owned();
-
-    debug!("Read remote url from git root origin: {}", url);
-
-    Ok(url)
-}
-
-pub(crate) fn relative_to_git_root(path: &Path) -> Result<String, GitError> {
-    let git_root_relative_output = Cmd::new("git")
-        .current_dir(path)
-        .arg("rev-parse")
-        .arg("--show-prefix")
-        .output()
-        .map_err(|e| GitError::from_io(e, "IO failure for get relative to git root!".to_owned()))?;
-
-    if !git_root_relative_output.status.success() {
-        return Err(GitError::from_f(
-            git_root_relative_output.status,
-            "Git get relative to root failed!".to_owned(),
-        ));
-    }
-
-    Ok(String::from_utf8(git_root_relative_output.stdout)
-        .map_err(|e| {
-            GitError::from_dec(e, "Failed to decode Git relative to root path!".to_owned())
-        })?
-        .trim_end()
-        .to_owned())
-}
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Repo {
@@ -124,29 +69,57 @@ pub(crate) fn parse_repo_url(url: String) -> Result<Repo, RepoParseError> {
     })
 }
 
-pub(crate) fn rev_parse_tag(tag: &str, path: &Path) -> Result<String, GitError> {
-    let parsed_tag_output = Cmd::new("git")
-        .current_dir(path)
-        .arg("rev-parse")
-        .arg(tag)
-        .output()
-        .map_err(|e| GitError::from_io(e, "IO failure for parsing Git tag!".to_owned()))?;
+fn run_git<S: AsRef<OsStr>>(
+    current_dir: &Path,
+    args: Vec<S>,
+    op_name: &'static str,
+) -> Result<String, GitError> {
+    let mut git_cmd = Cmd::new("git");
+    let mut git_cmd = git_cmd.current_dir(current_dir);
 
-    if !parsed_tag_output.status.success() {
-        let err_out = process_out(
-            parsed_tag_output.stderr,
-            "Git parse tag failed! Could not decode output!".to_owned(),
-        )?;
-        let msg = format!("Git parse tag failed! err: {}", err_out);
-        return Err(GitError::from_f(parsed_tag_output.status, msg));
+    for a in args {
+        git_cmd = git_cmd.arg(a)
     }
 
-    Ok(String::from_utf8(parsed_tag_output.stdout)
+    let git_output = git_cmd
+        .output()
+        .map_err(|e| GitError::from_io(e, format!("IO failure for git {}!", op_name)))?;
+
+    if !git_output.status.success() {
+        return Err(GitError::from_f(
+            git_output.status,
+            format!("git {} failed!", op_name),
+        ));
+    }
+
+    Ok(String::from_utf8(git_output.stdout)
         .map_err(|e| {
-            GitError::from_dec(e, "Failed to decode Git relative to root path!".to_owned())
+            GitError::from_dec(e, format!("Failed to decode git output from {}!", op_name))
         })?
         .trim_end()
         .to_owned())
+}
+
+pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
+    let args = vec!["config", "--get", "remote.origin.url"];
+
+    let url = run_git(path, args, "get git root origin url")?;
+
+    debug!("Read remote url from git root origin: {}", url);
+
+    Ok(url)
+}
+
+pub(crate) fn git_root_dir(path: &Path) -> Result<String, GitError> {
+    let args = vec!["rev-parse", "--show-toplevel"];
+
+    run_git(path, args, "get git root dir")
+}
+
+pub(crate) fn rev_parse_tag(tag: &str, path: &Path) -> Result<String, GitError> {
+    let args = vec!["rev-parse", tag];
+
+    run_git(path, args, "rev parse tag")
 }
 
 pub(crate) fn repo_clone(

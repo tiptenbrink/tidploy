@@ -21,9 +21,9 @@ use thiserror::Error as ThisError;
 use tracing::span;
 use tracing::{debug, Level};
 
-pub(crate) const DEFAULT_INFER: &str = "default_infer";
+pub(crate) const DEFAULT_GIT_REMOTE: &str = "tidploy_default_git_remote";
+pub(crate) const DEFAULT_GIT_LOCAL: &str = "tidploy_default_git_local";
 pub(crate) const TIDPLOY_DEFAULT: &str = "tidploy_default";
-pub(crate) const DEFAULT: &str = "default";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -53,7 +53,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Save secret with key until reboot
+    /// Save secret with key until reboot. Use the --tag option to scope it to a specific commit.
     Secret { key: String },
     /// Download tag or version with specific env, run automatically if using deploy
     Download {
@@ -130,7 +130,6 @@ fn switch_to_revision(
         path = deploy_path_str
     );
     let _enter = checkedout_span.enter();
-    let deploy_path = state.deploy_path.to_path(repo_path);
 
     // Checks out the correct commit
     checkout(repo_path, &state.commit_sha).map_err(ErrorRepr::Repo)?;
@@ -138,8 +137,13 @@ fn switch_to_revision(
     checkout_path(repo_path, &state.deploy_path).map_err(ErrorRepr::Repo)?;
 
     // Creates state from the newly checked out path and state, which should now contain the correct config
-    let state =
-        create_state_create(cli_state, Some(&deploy_path), true).map_err(ErrorRepr::Load)?;
+    let state = create_state_create(
+        cli_state,
+        Some(repo_path),
+        Some(state.deploy_path.as_relative_path()),
+        true,
+    )
+    .map_err(ErrorRepr::Load)?;
 
     Ok(state)
 }
@@ -182,8 +186,8 @@ fn download_command(
     // The preswitch stage creates state from the recently created repo, determining which commit sha to use for
     // the checkout and which deploy path to use
     let head_span = span!(Level::DEBUG, "preswitch").entered();
-    let state =
-        create_state_create(cli_state.clone(), Some(&repo_path), true).map_err(ErrorRepr::Load)?;
+    let state = create_state_create(cli_state.clone(), Some(&repo_path), None, true)
+        .map_err(ErrorRepr::Load)?;
     head_span.exit();
 
     let state = switch_to_revision(cli_state, state, &repo_path)?;
@@ -218,8 +222,8 @@ fn prepare_command(
     // The preswitch stage creates state from the recently created repo, determining which commit sha to use for
     // the checkout and which deploy path to use
     let head_span = span!(Level::DEBUG, "preswitch").entered();
-    let state =
-        create_state_create(cli_state.clone(), Some(&repo_path), true).map_err(ErrorRepr::Load)?;
+    let state = create_state_create(cli_state.clone(), Some(&repo_path), None, true)
+        .map_err(ErrorRepr::Load)?;
     head_span.exit();
 
     let state = switch_to_revision(cli_state, state, &repo_path)?;
@@ -268,15 +272,16 @@ pub(crate) fn run_cli() -> Result<(), Error> {
         Commands::Secret { key } => {
             let auth_span = span!(Level::DEBUG, "auth");
             let _auth_enter = auth_span.enter();
-            let state = create_state_create(cli_state, None, false).map_err(ErrorRepr::Load)?;
+            let state =
+                create_state_create(cli_state, None, None, false).map_err(ErrorRepr::Load)?;
 
             secret_command(&state, key).map_err(ErrorRepr::Auth)?;
 
             Ok(())
         }
         Commands::Download { repo_only } => {
-            let state =
-                create_state_create(cli_state.clone(), None, false).map_err(ErrorRepr::Load)?;
+            let state = create_state_create(cli_state.clone(), None, None, false)
+                .map_err(ErrorRepr::Load)?;
             download_command(cli_state, state.repo, repo_only)?;
 
             Ok(())
@@ -292,8 +297,8 @@ pub(crate) fn run_cli() -> Result<(), Error> {
 
             // This one we must manually exit so we use 'entered'. The preprepare stage determines the "repo".
             let enter_dl = span!(Level::DEBUG, "preprepare").entered();
-            let state =
-                create_state_create(cli_state.clone(), None, false).map_err(ErrorRepr::Load)?;
+            let state = create_state_create(cli_state.clone(), None, None, false)
+                .map_err(ErrorRepr::Load)?;
             enter_dl.exit();
 
             let state = prepare_command(cli_state.clone(), no_create, state.repo)?.unwrap();
@@ -311,14 +316,19 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             extract_archive(&archive_path, tmp_dir, &archive_name).map_err(ErrorRepr::Repo)?;
 
             let target_path_root = tmp_dir.join(archive_name);
-            let target_path = state.deploy_path.to_path(target_path_root);
-            let state =
-                create_state_run(cli_state, executable, variables, Some(&target_path), true)
-                    .map_err(ErrorRepr::Load)?;
+            let state = create_state_run(
+                cli_state,
+                executable,
+                variables,
+                Some(target_path_root.as_path()),
+                Some(state.deploy_path.as_relative_path()),
+                true,
+            )
+            .map_err(ErrorRepr::Load)?;
 
             let state = extra_envs(state);
 
-            run_entrypoint(state.current_dir, &state.exe_name, state.envs)
+            run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;
 
             Ok(())
@@ -331,7 +341,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             let _enter = span!(Level::DEBUG, "run");
 
             // Only loads archive if it is given, otherwise path is None
-            let path = if let Some(archive) = archive {
+            let state = if let Some(archive) = archive {
                 let cache_dir = get_dirs().cache.as_path();
                 let archive_path = cache_dir
                     .join("archives")
@@ -343,23 +353,33 @@ pub(crate) fn run_cli() -> Result<(), Error> {
                     extract_archive(&archive_path, tmp_dir, &archive).map_err(ErrorRepr::Repo)?;
                 debug!("Extracted and loaded archive at {:?}", &extracted_path);
 
-                let state = create_state_create(cli_state.clone(), Some(&extracted_path), true)
-                    .map_err(ErrorRepr::Load)?;
-                let target_path = state.deploy_path.to_path(&extracted_path);
+                let state =
+                    create_state_create(cli_state.clone(), Some(&extracted_path), None, true)
+                        .map_err(ErrorRepr::Load)?;
 
-                Some(target_path)
+                Some(state)
             } else {
                 debug!("No archive provided to run command.");
                 None
             };
-            let path_ref = path.as_deref();
+            let root_dir = state.as_ref().map(|state| state.root_dir.as_path());
+            let deploy_path = state
+                .as_ref()
+                .map(|state| state.deploy_path.as_relative_path());
 
-            let state = create_state_run(cli_state, executable, variables, path_ref, true)
-                .map_err(ErrorRepr::Load)?;
+            let state = create_state_run(
+                cli_state,
+                executable,
+                variables,
+                root_dir,
+                deploy_path,
+                true,
+            )
+            .map_err(ErrorRepr::Load)?;
 
             let state = extra_envs(state);
 
-            run_entrypoint(&state.current_dir, &state.exe_name, state.envs)
+            run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;
 
             Ok(())

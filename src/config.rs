@@ -1,4 +1,4 @@
-use relative_path::RelativePathBuf;
+use relative_path::{RelativePath, RelativePathBuf};
 use serde::Deserialize;
 use std::{
     collections::HashMap,
@@ -127,15 +127,15 @@ fn overwrite_config(root_config: DployConfig, overwrite_config: DployConfig) -> 
 /// Looks at config at start_path and appends levels from final_path, looking at a config at every level. It then
 /// combines them.
 pub(crate) fn traverse_configs(
-    start_path: PathBuf,
-    final_path: RelativePathBuf,
+    start_path: &Path,
+    final_path: &RelativePath,
 ) -> Result<DployConfig, ConfigError> {
     debug!(
         "Traversing configs from {:?} to relative {:?}",
         start_path, final_path
     );
 
-    let root_config = load_dploy_config(&start_path).map_err(|source| {
+    let root_config = load_dploy_config(start_path).map_err(|source| {
         let msg = format!(
             "Failed to load root config at path {:?} while traversing configs.",
             start_path
@@ -146,13 +146,13 @@ pub(crate) fn traverse_configs(
     let paths: Vec<PathBuf> = final_path
         .components()
         .scan(RelativePathBuf::new(), |state, component| {
-            state.join(component.as_str());
-            Some(state.to_path(&start_path))
+            state.push(component);
+            Some(state.to_path(start_path))
         })
         .collect();
 
     let combined_config = paths.iter().try_fold(root_config, |state, path| {
-        let inner_config = load_dploy_config(&start_path);
+        let inner_config = load_dploy_config(path);
 
         match inner_config {
             Ok(config) => ControlFlow::Continue(overwrite_config(state, config)),

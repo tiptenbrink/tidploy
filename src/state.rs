@@ -1,15 +1,13 @@
-use crate::commands::{DEFAULT, DEFAULT_INFER, TIDPLOY_DEFAULT};
-use crate::config::{
-    load_dploy_config, merge_vars, traverse_configs, ConfigError, ConfigVar, DployConfig,
-};
+use crate::commands::{DEFAULT_GIT_LOCAL, DEFAULT_GIT_REMOTE, TIDPLOY_DEFAULT};
+use crate::config::{merge_vars, traverse_configs, ConfigError, ConfigVar, DployConfig};
 use crate::errors::{GitError, RelPathError, RepoParseError};
 use crate::filesystem::{get_current_dir, FileError};
-use crate::git::{git_root_origin_url, parse_repo_url, relative_to_git_root, rev_parse_tag, Repo};
+use crate::git::{git_root_dir, git_root_origin_url, parse_repo_url, rev_parse_tag, Repo};
 use crate::secret::{get_secret, AuthError};
 
 use clap::ValueEnum;
 
-use relative_path::RelativePathBuf;
+use relative_path::{RelativePath, RelativePathBuf};
 
 use std::env::VarError;
 
@@ -53,7 +51,15 @@ pub(crate) struct State {
     pub(crate) commit_sha: String,
     pub(crate) envs: HashMap<String, String>,
     pub(crate) exe_name: String,
-    pub(crate) current_dir: PathBuf,
+    pub(crate) root_dir: PathBuf,
+}
+
+impl State {
+    pub(crate) fn deploy_dir(&self) -> PathBuf {
+        let dir = self.deploy_path.to_path(&self.root_dir);
+        debug!("Computed deploy_dir as {:?}", dir);
+        dir
+    }
 }
 
 #[derive(Debug, ThisError)]
@@ -195,7 +201,8 @@ fn set_state(
     load_tag: bool,
 ) -> Result<(), LoadError> {
     let read_repo_url_method = match merged_state.repo_url {
-        Some(value) if value == DEFAULT_INFER => ReadRepoMethod::GitRoot,
+        Some(value) if value == DEFAULT_GIT_REMOTE => ReadRepoMethod::GitRootRemote,
+        Some(value) if value == DEFAULT_GIT_LOCAL => ReadRepoMethod::GitRoot,
         Some(value) => ReadRepoMethod::Value(value),
         None => match state.context {
             StateContext::None => ReadRepoMethod::Default,
@@ -210,13 +217,14 @@ fn set_state(
 
     let repo_url = match read_repo_url_method {
         ReadRepoMethod::Value(value) => value,
-        ReadRepoMethod::Default => DEFAULT.to_owned(),
-        ReadRepoMethod::GitRootRemote => git_root_origin_url(&state.current_dir)?,
-        _ => unimplemented!(),
+        ReadRepoMethod::Default => TIDPLOY_DEFAULT.to_owned(),
+        ReadRepoMethod::GitRootRemote => git_root_origin_url(&state.root_dir)?,
+        // We assume paths will be UTF-8, as our root dir is almost certainly set from a UTF-8 string
+        ReadRepoMethod::GitRoot => state.root_dir.to_str().unwrap().to_owned(),
     };
 
     match repo_url.as_str() {
-        DEFAULT => {
+        TIDPLOY_DEFAULT => {
             debug!("Keeping state repo as default.")
         }
         _other => {
@@ -250,10 +258,10 @@ fn set_state(
 
     if load_tag && tag != TIDPLOY_DEFAULT {
         debug!("Setting commit sha to commit associated with tag {}.", tag);
-        state.commit_sha = rev_parse_tag(&tag, &state.current_dir)?;
+        state.commit_sha = rev_parse_tag(&tag, &state.root_dir)?;
     } else if load_tag {
         debug!("Setting commit sha to HEAD commit.");
-        state.commit_sha = rev_parse_tag("HEAD", &state.current_dir)?;
+        state.commit_sha = rev_parse_tag("HEAD", &state.root_dir)?;
     } else {
         debug!("Setting commit sha to tag.");
         state.commit_sha = tag.clone();
@@ -290,10 +298,11 @@ fn set_state(
 
 pub(crate) fn create_state_create(
     cli_state: CliEnvState,
-    path: Option<&Path>,
+    project_path: Option<&Path>,
+    deploy_path: Option<&RelativePath>,
     load_tag: bool,
 ) -> Result<State, LoadError> {
-    create_state(cli_state, None, path, load_tag)
+    create_state(cli_state, None, project_path, deploy_path, load_tag)
 }
 
 fn parse_cli_envs(envs: Vec<String>) -> Vec<ConfigVar> {
@@ -311,6 +320,7 @@ pub(crate) fn create_state_run(
     exe_name: Option<String>,
     envs: Vec<String>,
     path: Option<&Path>,
+    deploy_path: Option<&RelativePath>,
     load_tag: bool,
 ) -> Result<State, LoadError> {
     // Exits when the function returns
@@ -322,7 +332,7 @@ pub(crate) fn create_state_run(
         envs: parse_cli_envs(envs),
     };
     debug!("Parsed CLI envs as {:?}", cli_run_state);
-    create_state(cli_state, Some(cli_run_state), path, load_tag)
+    create_state(cli_state, Some(cli_run_state), path, deploy_path, load_tag)
 }
 
 /// Create a new state, merging the cli_state, env var state and config state and potentially loading it from the
@@ -331,19 +341,20 @@ pub(crate) fn create_state_run(
 fn create_state(
     cli_state: CliEnvState,
     cli_run_state: Option<CliEnvRunState>,
-    path: Option<&Path>,
+    project_path: Option<&Path>,
+    deploy_path: Option<&RelativePath>,
     load_tag: bool,
 ) -> Result<State, LoadError> {
-    let current_dir = if let Some(path) = path {
+    let current_dir = if let Some(path) = project_path {
         path.to_owned()
     } else {
         debug!("Using current dir as path for creating state.");
         get_current_dir().map_err(|source| FileError {
             source,
-            msg: "Failed to get current dir to use for loading configs!".to_owned(),
+            msg: "Failed to get current dir!".to_owned(),
         })?
     };
-    debug!("Creating state with path {:?}", path);
+    debug!("Creating state with path {:?}", current_dir);
 
     // ######################
     // INITIAL STATE CREATION
@@ -355,16 +366,16 @@ fn create_state(
     let mut state = State {
         context: StateContext::GitRemote,
         repo: Repo {
-            name: DEFAULT.to_owned(),
+            name: TIDPLOY_DEFAULT.to_owned(),
             url: "".to_owned(),
             encoded_url: "".to_owned(),
         },
         tag: "latest".to_owned(),
-        deploy_path: RelativePathBuf::new(),
+        deploy_path: deploy_path.map(RelativePath::to_owned).unwrap_or_default(),
         commit_sha: TIDPLOY_DEFAULT.to_owned(),
         envs: HashMap::<String, String>::new(),
         exe_name: TIDPLOY_DEFAULT.to_owned(),
-        current_dir,
+        root_dir: PathBuf::new(), // always replaced
     };
     debug!("Starting state is {:?}", state);
 
@@ -379,10 +390,11 @@ fn create_state(
         None
     };
 
+    // We load this environment variable value manually so we can immediately determine the context
     state.context = match cli_state.context {
         None => match env::var("TIDPLOY_CONTEXT") {
             Ok(val) => StateContext::from_str(&val).ok_or(LoadError::BadValue {
-                msg: "Environment value TIDPLOY_CONTEXT is not one of \"none\" or \"git\"!"
+                msg: "Environment value TIDPLOY_CONTEXT is not one of \"none\" or \"git_local\" or \"git_remote\"!"
                     .to_owned(),
             })?,
             Err(VarError::NotUnicode(_)) => {
@@ -394,29 +406,18 @@ fn create_state(
         },
         Some(cli_context) => cli_context,
     };
-    if state.context == StateContext::GitLocal {
-        // TODO implement git local context
-        unimplemented!()
-    }
+
+    // When context is none we don't want to do any looking around, otherwise we use the root of the current dir/provided path
+    state.root_dir = match state.context {
+        StateContext::None => current_dir,
+        StateContext::GitLocal | StateContext::GitRemote => {
+            Path::new(&git_root_dir(&current_dir)?).to_owned()
+        }
+    };
 
     debug!("Loaded state context as {:?}", state.context);
 
-    let dploy_config = match state.context {
-        StateContext::GitRemote => {
-            let git_root_relative = relative_to_git_root(&state.current_dir)?;
-            let git_root_relative = RelativePathBuf::from_path(git_root_relative).unwrap();
-            traverse_configs(state.current_dir.clone(), git_root_relative)?
-        }
-        StateContext::None => {
-            debug!("Loading config only at current dir.");
-            load_dploy_config(state.current_dir.clone()).map_err(|source| ConfigError {
-                source,
-                msg: "Failed to load config of current dir when loading with context none!"
-                    .to_owned(),
-            })?
-        }
-        _ => unimplemented!(),
-    };
+    let dploy_config = traverse_configs(&state.root_dir, &state.deploy_path)?;
 
     let merged_state = merge_state(&dploy_config, env_state, cli_state);
     debug!(
