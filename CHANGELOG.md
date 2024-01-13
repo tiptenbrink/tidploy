@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.0
+
+* Update keyring-rs, more explicitly state platform support. Linux has full support, macOS and Windows are untested but could work.
+
+
 ## 0.12.1 2024-01-12
 
 * Upload changelog

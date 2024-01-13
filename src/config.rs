@@ -52,6 +52,7 @@ pub(crate) fn load_dploy_config<P: AsRef<Path>>(
     let file_path = if choose_json { json_path } else { toml_path };
 
     if !file_path.exists() {
+        debug!("No config exists at path {:?}", file_path);
         return Ok(DployConfig {
             repo_url: None,
             deploy_path: None,
@@ -61,13 +62,15 @@ pub(crate) fn load_dploy_config<P: AsRef<Path>>(
         });
     }
 
-    let config_str = fs::read_to_string(file_path)?;
+    let config_str = fs::read_to_string(&file_path)?;
 
     let dploy_config: DployConfig = if choose_json {
         serde_json::from_str(&config_str)?
     } else {
         toml::from_str(&config_str)?
     };
+
+    debug!("Loaded config at path {:?}: {:?}", file_path, dploy_config);
 
     Ok(dploy_config)
 }
