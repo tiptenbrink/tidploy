@@ -2,7 +2,7 @@ use crate::errors::{RepoError, TarError};
 use crate::filesystem::{FileError, FileErrorKind};
 use crate::process::process_out;
 use std::fs;
-
+use tracing::debug;
 use std::path::{Path, PathBuf};
 use std::process::Command as Cmd;
 
@@ -66,6 +66,8 @@ pub(crate) fn extract_archive(
     })?;
 
     let target_path = current_dir.join(target_name);
+    debug!("Extracting archive {:?} to {:?}", archive_path, target_path);
+    
     if target_path.exists() {
         fs::remove_dir_all(&target_path).map_err(|e| {
             RepoError::from_io(

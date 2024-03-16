@@ -207,8 +207,8 @@ fn prepare_command(
     let _prep_enter = prepare_san.enter();
 
     let repo_path = if no_create {
-        let tmp_dir = get_dirs().cache.as_path();
-        let repo_path = tmp_dir.join(repo.dir_name());
+        let cache_dir = get_dirs().cache.as_path();
+        let repo_path = cache_dir.join(repo.dir_name());
 
         if !repo_path.exists() {
             return Err(RepoError::NotCreated.into());

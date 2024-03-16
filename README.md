@@ -79,6 +79,11 @@ If we now run:
 
 It will run `entrypoint.sh` and try to load the secret with key `bws` and load it as an environment variable named `BWS_ACCESS_TOKEN`. 
 
+## Known issues
+
+* git-local context doesn't function fully. If set without a CLI-set repo, it will change the repo name to the cache repo name dir
+* Unstable, no tests yet
+
 ## Notes
 
 ### History/original goal

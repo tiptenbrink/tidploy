@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.1 2024-03-16
+
+* Small change for match in get secret in secret_store, hopefully fixes strange bug
+
 ## 0.13.0 2024-01-13
 
 * Update keyring-rs, more explicitly state platform support. Linux has full support, macOS and Windows are untested but could work.
