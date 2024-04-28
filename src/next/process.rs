@@ -1,16 +1,14 @@
-/// This is purely application-level code, hence you would never want to reference it as a library. 
+use color_eyre::eyre::{Context, ContextCompat, Report};
+use std::str;
+/// This is purely application-level code, hence you would never want to reference it as a library.
 /// For this reason we do not really care about the exact errors and need not match on them.
-
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader},
     path::Path,
     process::{Command as Cmd, Stdio},
 };
-use tracing::{span, Level};
-use color_eyre::eyre::{Context, ContextCompat, Report};
-use std::str;
-use crate::errors::{ProcessError, ProcessErrorKind};
+use tracing::{debug, span, Level};
 
 /// Read output bytes into a string and trim any whitespace at the end.
 fn process_out(bytes: Vec<u8>) -> Result<String, Report> {
@@ -20,10 +18,9 @@ fn process_out(bytes: Vec<u8>) -> Result<String, Report> {
     // the output of a whole program
     let trim_len = output_string.trim_end().len();
     output_string.truncate(trim_len);
-    
+
     Ok(output_string)
 }
-
 
 pub(crate) fn run_entrypoint<P: AsRef<Path>>(
     entrypoint_dir: P,
@@ -34,6 +31,8 @@ pub(crate) fn run_entrypoint<P: AsRef<Path>>(
     let program_path = entrypoint_dir.as_ref().join(entrypoint);
     let entry_span = span!(Level::DEBUG, "entrypoint", path = program_path.to_str());
     let _enter = entry_span.enter();
+    
+    debug!("Running {:?} from {:?}", &program_path, entrypoint_dir.as_ref());
     let mut entrypoint_output = Cmd::new(&program_path)
         .current_dir(&entrypoint_dir)
         .envs(&envs)
@@ -80,7 +79,7 @@ mod tests {
         let current_dir = env::current_dir().unwrap();
         let project_dir = git_root_dir(&current_dir).unwrap();
         let project_path = Path::new(&project_dir).join("examples").join("run");
-        
+
         run_entrypoint(project_path, "do_echo.sh", HashMap::new()).unwrap();
     }
 
@@ -89,8 +88,7 @@ mod tests {
         let current_dir = env::current_dir().unwrap();
         let project_dir = git_root_dir(&current_dir).unwrap();
         let project_path = Path::new(&project_dir).join("examples").join("run");
-        
+
         run_entrypoint(project_path, "do_echo.sh", HashMap::new()).unwrap();
     }
-
 }

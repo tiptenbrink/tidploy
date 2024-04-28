@@ -435,3 +435,24 @@ fn create_state(
 
     Ok(state)
 }
+
+/// Adds a number of useful environment variables, such as the commit sha (both full and the first 7 characters) as well as the tag.
+pub(crate) fn extra_envs(mut state: State) -> State {
+    let commit_long = state.commit_sha.clone();
+    let commit_short = state.commit_sha[0..7].to_owned();
+
+    debug!(
+        "Setting state extra envs: sha: {}, sha_long: {}, tag: {}",
+        commit_short, commit_long, state.tag
+    );
+
+    state.envs.insert("TIDPLOY_SHA".to_owned(), commit_short);
+    state
+        .envs
+        .insert("TIDPLOY_SHA_LONG".to_owned(), commit_long);
+    state
+        .envs
+        .insert("TIDPLOY_TAG".to_owned(), state.tag.clone());
+
+    state
+}

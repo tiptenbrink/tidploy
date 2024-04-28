@@ -30,7 +30,7 @@ pub(crate) enum AuthErrorKind {
     Keyring(#[from] KeyringError),
 }
 
-/// Prompts for secret and saves it at <key>:<repo name>/<deploy path>/<commit sha>. The last three are all extracted
+/// Prompts for secret and saves it at `<key>:<repo name>/<deploy path>/<commit sha>`. The last three are all extracted
 /// from the state. Forward slashes in the deploy path are replaced with \\.
 pub(crate) fn secret_command(state: &State, key: String) -> Result<(), AuthError> {
     let password = prompt_password("Enter secret:\n").map_err(|e| AuthError {

@@ -12,7 +12,7 @@ pub(crate) fn get_password(key: &str) -> Result<Option<String>> {
         Err(NoEntry) => {
             debug!("No entry found!");
             Ok(None)
-        },
+        }
         Err(err) => Err(err),
     }
 }

@@ -19,7 +19,11 @@ pub(crate) fn process_out(bytes: Vec<u8>, err_msg: String) -> Result<String, Pro
 
 /// Convenience function to create a process error.
 fn err_ctx<P: AsRef<Path>>(e: impl Into<ProcessErrorKind>, info: &str, p: P) -> ProcessError {
-    let msg = format!("IO error {} (running entrypoint at path: {:?})", info, p.as_ref());
+    let msg = format!(
+        "IO error {} (running entrypoint at path: {:?})",
+        info,
+        p.as_ref()
+    );
     ProcessError {
         msg,
         source: e.into(),
@@ -79,7 +83,7 @@ mod tests {
         let current_dir = env::current_dir().unwrap();
         let project_dir = git_root_dir(&current_dir).unwrap();
         let project_path = Path::new(&project_dir).join("examples").join("run");
-        
+
         run_entrypoint(project_path, "do_echo.sh", HashMap::new()).unwrap();
     }
 
@@ -88,8 +92,7 @@ mod tests {
         let current_dir = env::current_dir().unwrap();
         let project_dir = git_root_dir(&current_dir).unwrap();
         let project_path = Path::new(&project_dir).join("examples").join("run");
-        
+
         run_entrypoint(project_path, "do_echo.sh", HashMap::new()).unwrap();
     }
-
 }

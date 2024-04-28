@@ -201,3 +201,30 @@ Options:
   -t, --tag <TAG>                 The git reference (commit or tag) to use
   -d, --deploy-pth <DEPLOY_PTH>   The path ins
 ```
+
+## Architecture
+
+`tidploy` does 3 things:
+- Parse configuration
+  - Here it offers first class support for using OS APIs to safely read and load secrets
+- Download and isolate repositories using Git
+- Inject configuration into an executable using environment variables
+
+It's important to realize that the only step that surely happens once is the last one, at least in a single run of `tidploy` (you can always call tidploy again from your executable). Before we can run the executable, we need to build up a 'state' that includes all the configuration we want to provide to our executable in the form of environment variables.
+
+Remember, we don't want to manually provide a list of environment variables every time we want to restart our application. Furthermore, this configuration also doesn't just live in one big `.env` file checked into the repository. In particular, we might have secret values or the configuration lives in multiple files. A complex example use case we want to support is the following:
+
+- The current latest commit of our repository (`1abcdef`) is version Y of our application
+- We want to restart our application, which in production is still running version X
+- Our repository at commit `1abcdef` has some updates to some infrastructure scripts we might want to use, but we made them point to version X as the latest production version (maybe you added `tidploy`)
+- We now want to check out commit `1abcdef` on our production server and run `tidploy ...` such that it downloads the repository at the commit corresponding to version X, loads in the correct secrets (corresponding to version X, which might have been changed in the latest commit) and then runs the executable starting the application
+
+This requires the following work on `tidploy`'s side:
+- Parse a configuration file in the latest repo saying to download version X
+- Download it and put the repository somewhere 
+- Parse the configuration of the repository in that older state to locate the executable and which secrets to load
+- Run it with all the correct environment variables
+
+As you can see, we now have to parse the configuration twice! This could technically happen even more times, but each time we are building a final state closer to the rich state that allows us to actually run the application.
+
+### State creation

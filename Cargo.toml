@@ -4,7 +4,7 @@ version = "0.14.0"
 edition = "2021"
 license-file="LICENSE"
 authors=["Tip ten Brink"]
-description="Simple deployment tool for deploying small applications and loading secrets"
+description="Simple deployment tool for deploying small applications and loading secrets."
 repository="https://github.com/tiptenbrink/tidploy"
 readme="README.md"
 
@@ -20,9 +20,7 @@ spinoff = { version = "=0.8.0", features = ["line"] }
 thiserror = "=1.0.56"
 toml = "=0.8.8"
 tracing = "=0.1.40"
-
-tracing-subscriber = { version="=0.3.18" }
+tracing-subscriber = "=0.3.18"
 tracing-error = "=0.2.0"
 directories = "=5.0.1"
-snafu = "=0.8.2"
 color-eyre = "=0.6.3"

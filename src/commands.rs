@@ -4,24 +4,24 @@ use crate::archives::{extract_archive, make_archive};
 use crate::errors::{ProcessError, RepoError};
 use crate::filesystem::get_dirs;
 use crate::git::{checkout, checkout_path, repo_clone, Repo};
+use crate::next::run::run_command;
 use crate::secret::{secret_command, AuthError};
 
+use crate::next::process::run_entrypoint as next_run_entrypoint;
 use crate::process::run_entrypoint;
-use crate::next::process::{run_entrypoint as next_run_entrypoint};
 use crate::state::{
-    create_state_create, create_state_run, CliEnvState, LoadError, State, StateContext,
+    create_state_create, create_state_run, extra_envs, CliEnvState, LoadError, State, StateContext
 };
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
 use base64::Engine;
 use clap::{Parser, Subcommand};
-use color_eyre::eyre::{Context, Report};
-use color_eyre::Section;
+use color_eyre::eyre::Report;
 
 use std::fmt::Debug;
 use std::time::Instant;
 
 use thiserror::Error as ThisError;
-use tracing::{instrument, span};
+use tracing::span;
 use tracing::{debug, Level};
 
 pub(crate) const DEFAULT_GIT_REMOTE: &str = "tidploy_default_git_remote";
@@ -236,30 +236,10 @@ fn prepare_command(
     Ok(Some(state))
 }
 
-/// Adds a number of useful environment variables, such as the commit sha (both full and the first 7 characters) as well as the tag.
-fn extra_envs(mut state: State) -> State {
-    let commit_long = state.commit_sha.clone();
-    let commit_short = state.commit_sha[0..7].to_owned();
-
-    debug!(
-        "Setting state extra envs: sha: {}, sha_long: {}, tag: {}",
-        commit_short, commit_long, state.tag
-    );
-
-    state.envs.insert("TIDPLOY_SHA".to_owned(), commit_short);
-    state
-        .envs
-        .insert("TIDPLOY_SHA_LONG".to_owned(), commit_long);
-    state
-        .envs
-        .insert("TIDPLOY_TAG".to_owned(), state.tag.clone());
-
-    state
-}
-
 pub(crate) fn run_cli() -> Result<(), Report> {
-    let _now = Instant::now();
-
+    // We get our CLI arguments using the clap crate. This allows us to state all our arguments using
+    // a set of structs, indicating the structure of our commands
+    // Note that it uses the Cargo.toml description as the main help command description
     let args = Cli::parse();
 
     let cli_state = CliEnvState {
@@ -341,49 +321,7 @@ pub(crate) fn run_cli() -> Result<(), Report> {
             variables,
             archive,
         } => {
-            let run_span = span!(Level::DEBUG, "run");
-            let _enter = run_span.enter();
-
-            // Only loads archive if it is given, otherwise path is None
-            let state = if let Some(archive) = archive {
-                let cache_dir = get_dirs().cache.as_path();
-                let archive_path = cache_dir
-                    .join("archives")
-                    .join(&archive)
-                    .with_extension("tar.gz");
-
-                let tmp_dir = get_dirs().tmp.as_path();
-                let extracted_path =
-                    extract_archive(&archive_path, tmp_dir, &archive).map_err(ErrorRepr::Repo)?;
-                debug!("Extracted and loaded archive at {:?}", &extracted_path);
-
-                let state =
-                    create_state_create(cli_state.clone(), Some(&extracted_path), None, true)
-                        .map_err(ErrorRepr::Load)?;
-
-                Some(state)
-            } else {
-                debug!("No archive provided to run command.");
-                None
-            };
-            let root_dir = state.as_ref().map(|state| state.root_dir.as_path());
-            let deploy_path = state
-                .as_ref()
-                .map(|state| state.deploy_path.as_relative_path());
-
-            let state = create_state_run(
-                cli_state,
-                executable,
-                variables,
-                root_dir,
-                deploy_path,
-                true,
-            )
-            .map_err(ErrorRepr::Load)?;
-
-            let state = extra_envs(state);
-
-            next_run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs)
+            run_command(cli_state, executable, variables, archive)
         }
     }
 }
