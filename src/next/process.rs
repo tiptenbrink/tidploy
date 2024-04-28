@@ -1,49 +1,50 @@
+/// This is purely application-level code, hence you would never want to reference it as a library. 
+/// For this reason we do not really care about the exact errors and need not match on them.
+
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader},
     path::Path,
     process::{Command as Cmd, Stdio},
 };
-
+use tracing::{span, Level};
+use color_eyre::eyre::{Context, ContextCompat, Report};
+use std::str;
 use crate::errors::{ProcessError, ProcessErrorKind};
 
-pub(crate) fn process_out(bytes: Vec<u8>, err_msg: String) -> Result<String, ProcessError> {
-    Ok(String::from_utf8(bytes)
-        .map_err(|e| ProcessError {
-            msg: err_msg,
-            source: ProcessErrorKind::Decode(e),
-        })?
-        .trim_end()
-        .to_owned())
+/// Read output bytes into a string and trim any whitespace at the end.
+fn process_out(bytes: Vec<u8>) -> Result<String, Report> {
+    let mut output_string = String::from_utf8(bytes)
+        .wrap_err("Error occurred decoding process output bytes as UTF-8.")?;
+    // We use truncate to prevent having to copy the string, which could be quite large as it's
+    // the output of a whole program
+    let trim_len = output_string.trim_end().len();
+    output_string.truncate(trim_len);
+    
+    Ok(output_string)
 }
 
-/// Convenience function to create a process error.
-fn err_ctx<P: AsRef<Path>>(e: impl Into<ProcessErrorKind>, info: &str, p: P) -> ProcessError {
-    let msg = format!("IO error {} (running entrypoint at path: {:?})", info, p.as_ref());
-    ProcessError {
-        msg,
-        source: e.into(),
-    }
-}
 
 pub(crate) fn run_entrypoint<P: AsRef<Path>>(
     entrypoint_dir: P,
     entrypoint: &str,
     envs: HashMap<String, String>,
-) -> Result<(), ProcessError> {
+) -> Result<(), Report> {
     println!("Running {}!", &entrypoint);
     let program_path = entrypoint_dir.as_ref().join(entrypoint);
+    let entry_span = span!(Level::DEBUG, "entrypoint", path = program_path.to_str());
+    let _enter = entry_span.enter();
     let mut entrypoint_output = Cmd::new(&program_path)
         .current_dir(&entrypoint_dir)
         .envs(&envs)
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|e| err_ctx(e, "spawning process", &program_path))?;
+        .wrap_err("System IO error occurred spawning process!")?;
 
     let entrypoint_stdout = entrypoint_output
         .stdout
         .take()
-        .ok_or_else(|| err_ctx(ProcessErrorKind::NoOutput, "", &program_path))?;
+        .wrap_err("No output for process!")?;
 
     let reader = BufReader::new(entrypoint_stdout);
 
@@ -54,13 +55,13 @@ pub(crate) fn run_entrypoint<P: AsRef<Path>>(
 
     let output_stderr = entrypoint_output
         .wait_with_output()
-        .map_err(|e| err_ctx(e, "reading output err", &program_path))?
+        .wrap_err("Error reading output stderr!")?
         .stderr;
     if !output_stderr.is_empty() {
         println!(
             "Entrypoint {:?} failed with error: {}",
             program_path.as_path(),
-            process_out(output_stderr, "Failed to decode entrypoint".to_owned())?
+            process_out(output_stderr)?
         )
     }
     Ok(())

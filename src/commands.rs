@@ -7,18 +7,21 @@ use crate::git::{checkout, checkout_path, repo_clone, Repo};
 use crate::secret::{secret_command, AuthError};
 
 use crate::process::run_entrypoint;
+use crate::next::process::{run_entrypoint as next_run_entrypoint};
 use crate::state::{
     create_state_create, create_state_run, CliEnvState, LoadError, State, StateContext,
 };
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
 use base64::Engine;
 use clap::{Parser, Subcommand};
+use color_eyre::eyre::{Context, Report};
+use color_eyre::Section;
 
 use std::fmt::Debug;
 use std::time::Instant;
 
 use thiserror::Error as ThisError;
-use tracing::span;
+use tracing::{instrument, span};
 use tracing::{debug, Level};
 
 pub(crate) const DEFAULT_GIT_REMOTE: &str = "tidploy_default_git_remote";
@@ -254,7 +257,7 @@ fn extra_envs(mut state: State) -> State {
     state
 }
 
-pub(crate) fn run_cli() -> Result<(), Error> {
+pub(crate) fn run_cli() -> Result<(), Report> {
     let _now = Instant::now();
 
     let args = Cli::parse();
@@ -338,7 +341,8 @@ pub(crate) fn run_cli() -> Result<(), Error> {
             variables,
             archive,
         } => {
-            let _enter = span!(Level::DEBUG, "run");
+            let run_span = span!(Level::DEBUG, "run");
+            let _enter = run_span.enter();
 
             // Only loads archive if it is given, otherwise path is None
             let state = if let Some(archive) = archive {
@@ -379,10 +383,7 @@ pub(crate) fn run_cli() -> Result<(), Error> {
 
             let state = extra_envs(state);
 
-            run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs)
-                .map_err(ErrorRepr::Exe)?;
-
-            Ok(())
+            next_run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs)
         }
     }
 }

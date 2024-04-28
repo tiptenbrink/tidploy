@@ -37,7 +37,7 @@ If you have a file called `abc.sh`:
 echo $ABCD
 ```
 
-And you run:
+And you run (in the same directory as the file):
 
 ```
 tidploy run --context none -x abc.sh -v <secret name> ABCD
@@ -78,6 +78,12 @@ If we now run:
 ```tidploy run```
 
 It will run `entrypoint.sh` and try to load the secret with key `bws` and load it as an environment variable named `BWS_ACCESS_TOKEN`. 
+
+## Troubleshooting
+
+### `run`
+
+Your executable must either be an actual executable file, or it must have a shebang that indicates how to run it. So if you are getting `Exec format error`, try adding `#!/bin/sh` or any other relevant shebang to the top of your file.
 
 ## Known issues
 

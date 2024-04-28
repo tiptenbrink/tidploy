@@ -1,6 +1,6 @@
 [package]
 name = "tidploy"
-version = "0.13.1"
+version = "0.14.0"
 edition = "2021"
 license-file="LICENSE"
 authors=["Tip ten Brink"]
@@ -20,5 +20,9 @@ spinoff = { version = "=0.8.0", features = ["line"] }
 thiserror = "=1.0.56"
 toml = "=0.8.8"
 tracing = "=0.1.40"
-tracing-subscriber = "=0.3.18"
+
+tracing-subscriber = { version="=0.3.18" }
+tracing-error = "=0.2.0"
 directories = "=5.0.1"
+snafu = "=0.8.2"
+color-eyre = "=0.6.3"

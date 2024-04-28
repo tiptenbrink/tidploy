@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.0 2024-
+
+* Start using (color-)eyre which should print the errors in a nicer format and makes especially the more application-level IO errors a lot easier to handle. This also includes a spantrace and a location, which makes it much easier to track where the error actually occurred. 
+
 ## 0.13.1 2024-03-16
 
 * Small change for match in get secret in secret_store, hopefully fixes strange bug
