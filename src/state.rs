@@ -17,8 +17,12 @@ use thiserror::Error as ThisError;
 
 use tracing::{debug, span, Level};
 
+/// The different contexts that tidploy will use to populate its configuration. 'None' means it will
+/// not consider that it is currently in a Git project and will only pick up configuration in its
+/// current directory.
+#[non_exhaustive]
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
-pub(crate) enum StateContext {
+pub enum StateContext {
     None,
     GitRemote,
     GitLocal,
@@ -83,9 +87,9 @@ pub(crate) enum LoadError {
 }
 
 #[derive(Clone, Debug)]
-struct CliEnvRunState {
-    envs: Vec<ConfigVar>,
-    exe_name: Option<String>,
+pub(crate) struct CliEnvRunState {
+    pub(crate) envs: Vec<ConfigVar>,
+    pub(crate) exe_name: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -338,7 +342,7 @@ pub(crate) fn create_state_run(
 /// Create a new state, merging the cli_state, env var state and config state and potentially loading it from the
 /// context of the supplied path (or current directory if not provided). If cli_run_state is None, no run_state is
 /// loaded.
-fn create_state(
+pub(crate) fn create_state(
     cli_state: CliEnvState,
     cli_run_state: Option<CliEnvRunState>,
     project_path: Option<&Path>,

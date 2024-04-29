@@ -1,9 +1,11 @@
 use color_eyre::eyre::{Context, Report};
 use tracing::{debug, instrument};
 
-use crate::{archives::extract_archive, filesystem::get_dirs, state::{create_state_create, create_state_run, extra_envs, CliEnvState}};
 
-use super::process::run_entrypoint;
+
+use crate::{archives::extract_archive, filesystem::get_dirs, state::{create_state_create, extra_envs, CliEnvState}};
+
+use super::{process::run_entrypoint, state::create_state_run};
 
 #[instrument(name = "run", level = "debug", skip_all)]
 pub(crate) fn run_command(cli_state: CliEnvState, executable: Option<String>, variables: Vec<String>, archive: Option<String>) -> Result<(), Report> {
