@@ -33,3 +33,19 @@ fn test_spinner() -> Result<(), CommandError> {
 
     Ok(())
 }
+
+/// This test checks whether the stderr and stdout are shown in the correct order.
+#[test]
+fn test_stdout_stderr() -> Result<(), CommandError> {
+    let mut global_args = GlobalArguments::default();
+    let mut args = RunArguments::default();
+    global_args.context = Some(StateContext::None);
+    args.executable = Some("examples/run/example_stderr.sh".to_owned());
+
+    let output = run_command(global_args, args)?;
+    assert!(output.exit.success());
+
+    assert_eq!("hello1\nhello2\nerr1\nerr2\nhello3\n", output.out);
+
+    Ok(())
+}

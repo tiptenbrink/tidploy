@@ -32,51 +32,32 @@ pub struct EntrypointOut {
     pub exit: ExitStatus
 }
 
+/// Runs the entrypoint, sending the entrypoint's stdout and stderr to stdout
 pub(crate) fn run_entrypoint<P: AsRef<Path>>(
     entrypoint_dir: P,
     entrypoint: &str,
     envs: HashMap<String, String>,
 ) -> Result<EntrypointOut, Report> {
     println!("Running {}!", &entrypoint);
-    
-
     let program_path = entrypoint_dir.as_ref().join(entrypoint);
-    // let cmd_expr = cmd(&program_path, Vec::<String>::new()).dir(entrypoint_dir.as_ref()).full_env(&envs);
-    // let reader = cmd_expr.stderr_to_stdout().reader()?;
+    let mut combined_envs: HashMap<_, _> = std::env::vars().collect();
+    combined_envs.extend(envs);
+
+    let cmd_expr = cmd(&program_path, Vec::<String>::new())
+        .dir(entrypoint_dir.as_ref())
+        .full_env(&combined_envs);
+
+    let reader = cmd_expr.stderr_to_stdout().reader()?;
     
     let entry_span = span!(Level::DEBUG, "entrypoint", path = program_path.to_str());
     let _enter = entry_span.enter();
-    
-    debug!("Running {:?} from {:?}", &program_path, entrypoint_dir.as_ref());
-    let mut entrypoint_output = Cmd::new(&program_path)
-        .current_dir(&entrypoint_dir)
-        .envs(&envs)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .wrap_err("System IO error occurred spawning process!")?;
-
-    let entrypoint_stdout = entrypoint_output
-        .stdout
-        .take()
-        .wrap_err("Error getting process stdout!")?;
-
-    let entrypoint_stderr = entrypoint_output
-        .stderr
-        .take()
-        .wrap_err("Error getting process stderr!")?;
 
     let mut out: String = String::with_capacity(128);
     
-    let mut reader = BufReader::new(entrypoint_stdout);
-    let mut reader_err = BufReader::new(entrypoint_stderr);
-
+    let mut reader = BufReader::new(reader);
     let mut buffer_out = [0; 32];
-    let mut buffer_err = [0; 32];
-
-    let exit = loop {
+    loop {
         let bytes_read_out = reader.read(&mut buffer_out).wrap_err("Error reading stdout bytes!")?;
-        let bytes_read_err = reader_err.read(&mut buffer_err).wrap_err("Error reading stdout bytes!")?;
 
         if bytes_read_out > 0 {
             let string_buf = str::from_utf8(&buffer_out[..bytes_read_out]).wrap_err("Error converting stdout bytes to UTF-8!")?;
@@ -86,20 +67,13 @@ pub(crate) fn run_entrypoint<P: AsRef<Path>>(
             let _ = stdout().flush();
             out.push_str(string_buf);
         }
-        if bytes_read_err > 0 {
-            let string_buf = str::from_utf8(&buffer_err[..bytes_read_err]).wrap_err("Error converting stderr bytes to UTF-8!")?;
-            print!("{}", string_buf);
-            let _ = stderr().flush();
-            out.push_str(string_buf);
-        }
-        
-        if bytes_read_out == 0 && bytes_read_err == 0 {
-            let exit = entrypoint_output.try_wait().wrap_err("Error attempting to read entrypoint exit status!")?;
-            if let Some(exit) = exit {
-                break exit
-            }
+        else {
+            break;
         }
     };
+    let inner_reader = reader.into_inner();
+    let maybe_output = inner_reader.try_wait().wrap_err("Error trying to get reader exit status!")?;
+    let exit = maybe_output.map(|out| out.status).unwrap_or(ExitStatus::default());
 
     Ok(EntrypointOut {
         out,
