@@ -1,14 +1,6 @@
-mod archives;
-mod commands;
-mod config;
-mod errors;
-mod filesystem;
-mod git;
-mod next;
-mod process;
-mod secret;
-mod secret_store;
-mod state;
+use std::process::ExitCode;
+
+use tidploy::commands;
 
 use color_eyre::eyre::Report;
 use tracing_error::ErrorLayer;
@@ -25,7 +17,7 @@ fn install_tracing() {
         .init();
 }
 
-fn main() -> Result<(), Report> {
+fn main() -> Result<ExitCode, Report> {
     install_tracing();
     color_eyre::install()?;
 

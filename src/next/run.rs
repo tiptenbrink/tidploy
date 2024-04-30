@@ -5,10 +5,10 @@ use tracing::{debug, instrument};
 
 use crate::{archives::extract_archive, filesystem::get_dirs, state::{create_state_create, extra_envs, CliEnvState}};
 
-use super::{process::run_entrypoint, state::create_state_run};
+use super::{process::{run_entrypoint, EntrypointOut}, state::create_state_run};
 
 #[instrument(name = "run", level = "debug", skip_all)]
-pub(crate) fn run_command(cli_state: CliEnvState, executable: Option<String>, variables: Vec<String>, archive: Option<String>) -> Result<(), Report> {
+pub(crate) fn run_command(cli_state: CliEnvState, executable: Option<String>, variables: Vec<String>, archive: Option<String>) -> Result<EntrypointOut, Report> {
     // Only loads archive if it is given, otherwise path is None
     // let state = if let Some(archive) = archive {
     //     let cache_dir = get_dirs().cache.as_path();

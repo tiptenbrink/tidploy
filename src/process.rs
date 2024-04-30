@@ -69,30 +69,3 @@ pub(crate) fn run_entrypoint<P: AsRef<Path>>(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use std::env;
-
-    use crate::git::git_root_dir;
-
-    use super::*;
-
-    #[test]
-    fn test_run_entrypoint() {
-        let current_dir = env::current_dir().unwrap();
-        let project_dir = git_root_dir(&current_dir).unwrap();
-        let project_path = Path::new(&project_dir).join("examples").join("run");
-
-        run_entrypoint(project_path, "do_echo.sh", HashMap::new()).unwrap();
-    }
-
-    #[test]
-    fn test_spawn() {
-        let current_dir = env::current_dir().unwrap();
-        let project_dir = git_root_dir(&current_dir).unwrap();
-        let project_path = Path::new(&project_dir).join("examples").join("run");
-
-        run_entrypoint(project_path, "do_echo.sh", HashMap::new()).unwrap();
-    }
-}

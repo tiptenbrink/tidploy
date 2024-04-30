@@ -1,9 +1,25 @@
-use super::run::{run_command as inner_run_command};
+use super::run::run_command as inner_run_command;
 use crate::state::CliEnvState;
-pub use crate::state::StateContext;
 use color_eyre::eyre::Report;
 use thiserror::Error as ThisError;
 
+pub use super::process::EntrypointOut;
+pub use crate::state::StateContext;
+
+/// These represent global arguments that correspond to global args of the CLI (i.e. valid for all 
+/// subcomannds). To limit breaking changes, this struct is `non_exhaustive`.
+/// 
+/// Instantiate GlobalArguments using:
+/// ```
+/// # use tidploy::GlobalArguments;
+/// let mut global_args = GlobalArguments::default();
+/// ```
+/// Then you can set the arguments like:
+/// ```
+/// # use tidploy::GlobalArguments;
+/// # let mut global_args = GlobalArguments::default();
+/// global_args.deploy_path = Some("use/deploy".to_owned());
+/// ```
 #[non_exhaustive]
 pub struct GlobalArguments {
     pub context: Option<StateContext>,
@@ -23,17 +39,8 @@ impl Default for GlobalArguments {
     }
 }
 
-impl GlobalArguments {
-    pub fn cli_env(context: Option<StateContext>, repo_url: Option<String>, deploy_path: Option<String>, tag: Option<String>) -> Self {
-        GlobalArguments {
-            context,
-            repo_url,
-            deploy_path,
-            tag
-        }
-    }
-}
-
+/// These represent arguments that correspond to args of the CLI `run` subcommand. To limit breaking 
+/// changes, this struct is `non_exhaustive`. See [GlobalArguments] for details on how to instantiate.
 #[non_exhaustive]
 pub struct RunArguments {
     pub executable: Option<String>,
@@ -51,16 +58,6 @@ impl Default for RunArguments {
     }
 }
 
-impl RunArguments {
-    pub fn with(executable: Option<String>, variables: Vec<String>, archive: Option<String>) -> Self {
-        RunArguments {
-            executable,
-            variables,
-            archive
-        }
-    }
-}
-
 impl From<GlobalArguments> for CliEnvState {
     fn from(args: GlobalArguments) -> Self {
         CliEnvState {
@@ -72,14 +69,16 @@ impl From<GlobalArguments> for CliEnvState {
     }
 }
 
+/// Simple wrapper error that displays the inner `eyre` [Report]. However, it is not directly accessible. Do
+/// not try to match on its potential errors, simply directly display it.
 #[derive(ThisError, Debug)]
 #[error("{msg} {source}")]
 pub struct CommandError {
-    msg: String,
+    pub msg: String,
     source: Report
 }
 
-pub fn run_command(global_args: GlobalArguments, args: RunArguments) -> Result<(), CommandError> {
+pub fn run_command(global_args: GlobalArguments, args: RunArguments) -> Result<EntrypointOut, CommandError> {
     inner_run_command(global_args.into(), args.executable, args.variables, args.archive).map_err(|e|
     CommandError {
         msg: "An error occurred in the inner application layer.".to_owned(),

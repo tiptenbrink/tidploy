@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use crate::archives::{extract_archive, make_archive};
 use crate::errors::{ProcessError, RepoError};
@@ -236,7 +237,7 @@ fn prepare_command(
     Ok(Some(state))
 }
 
-pub(crate) fn run_cli() -> Result<(), Report> {
+pub fn run_cli() -> Result<ExitCode, Report> {
     // We get our CLI arguments using the clap crate. This allows us to state all our arguments using
     // a set of structs, indicating the structure of our commands
     // Note that it uses the Cargo.toml description as the main help command description
@@ -260,14 +261,14 @@ pub(crate) fn run_cli() -> Result<(), Report> {
 
             secret_command(&state, key).map_err(ErrorRepr::Auth)?;
 
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Download { repo_only } => {
             let state = create_state_create(cli_state.clone(), None, None, false)
                 .map_err(ErrorRepr::Load)?;
             download_command(cli_state, state.repo, repo_only)?;
 
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Deploy {
             executable,
@@ -314,14 +315,18 @@ pub(crate) fn run_cli() -> Result<(), Report> {
             run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;
 
-            Ok(())
+                Ok(ExitCode::SUCCESS)
         }
         Commands::Run {
             executable,
             variables,
             archive,
         } => {
-            run_command(cli_state, executable, variables, archive)
+            let out = run_command(cli_state, executable, variables, archive)?;
+            // If [process::ExitCode::from_raw] gets stabilized this can be simplified
+            let code = u8::try_from(out.exit.code().unwrap_or(0))?;
+
+            Ok(ExitCode::from(code))
         }
     }
 }
