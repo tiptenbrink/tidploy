@@ -227,6 +227,21 @@ This requires the following work on `tidploy`'s side:
 
 As you can see, we now have to parse the configuration twice! This could technically happen even more times, but each time we are building a final state closer to the rich state that allows us to actually run the application.
 
-### State creation
+### Important state
 
-The first phase involves creating the state necessary to run the application. 
+#### Paths and sources
+
+There is the `context_root`, `state_root`, `state_path`, `exe_dir` and `exe_path`. The `context_root` is the root of the context, usually the Git repository. It can also just be the current directory. All other paths need to be children of the `context_root`. The `state_root` is the highest logical level that `tidploy` should consider for building its state. Relevant config files at its level will be the base, that deeper levels will then be merged with, overriding any existing keys. `state_path` is the final logical level that `tidploy` will look for configs. Note that this must be a child of `state_root`, as `tidploy` supports only a single tree of configs. `exe_dir` will be the directory from which the executable will be executed, while `exe_path` will be the relative path from the `exe_dir` to the executable. Again, `exe_path` must be a child of `exe_dir`. 
+
+The repository will be checked out in a sparse way (with the `exe_path` and `state_path` as the two directories) from a treeless partial clone (what this means is that a lot of unnecessary history is not cloned and only the `state_path`, `exe_path` folders and their descendants/ancestors will be there). If the context is none, then of course no checkout of any kind will happen and the entire current directory is considered. 
+
+By default, `exe_dir` is set to `state_root` and the latter defaults to the `context_root` (by default the current Git repository root). `state_path` is set to `exe_dir` and `exe_path` is `entrypoint.sh`. If the context is none, `context_root` is always just the current directory.
+
+#### Context and state name
+
+By default, `tidploy` will look for the root of the Git repository that the current directory resides in and choose that as the `context_root`. It will use this to infer things like the repository name, as well. The name of the `state_path` folder will be used as the "state name", which usually represents some broad category, e.g. 'production' or 'staging'.
+
+
+#### Steps
+
+First, `tidploy` needs to find the 'address' of its deployment. It will keep resolving git repositories, load the state and see if it has now changed. It will keep doing this until it no longer changes. If the context is none and there is no address change in the loaded config, it will skip this step and work directly from the current directory.

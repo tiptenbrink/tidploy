@@ -4,3 +4,4 @@ pub(crate) mod errors;
 pub(crate) mod process;
 pub(crate) mod run;
 pub(crate) mod state;
+pub(crate) mod secrets;

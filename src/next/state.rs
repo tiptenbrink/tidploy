@@ -1,10 +1,11 @@
 use std::{collections::HashMap, env::current_dir, path::PathBuf};
 
-use color_eyre::eyre::Report;
+use color_eyre::eyre::{ContextCompat, Report};
 
+use relative_path::{RelativePath, RelativePathBuf};
 use tracing::{debug, span, Level};
 
-use crate::config::ConfigVar;
+use crate::{config::ConfigVar, next::secrets::get_secret};
 
 use super::errors::SecretError;
 
@@ -21,43 +22,88 @@ fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
         .collect()
 }
 
-pub(crate) struct State {
-    pub(crate) exe_name: String,
-    pub(crate) path: PathBuf,
+pub(crate) struct StatePaths {
+    pub(crate) context_root: PathBuf,
+    pub(crate) state_root: RelativePathBuf,
+    pub(crate) state_path: RelativePathBuf,
+    pub(crate) exe_dir: RelativePathBuf,
+    pub(crate) exe_path: RelativePathBuf,
+}
+
+pub(crate) struct StateOut {
+    pub(crate) context_name: String,
+    pub(crate) paths: StatePaths,
     pub(crate) envs: HashMap<String, String>,
 }
 
-fn secret_vars_to_envs(vars: Vec<ConfigVar>) -> Result<HashMap<String, String>, SecretError> {
+impl StateOut {
+    fn state_name<'a>(&'a self) -> &'a str {
+        self.paths.state_path.as_str()
+    }
+}
+
+fn secret_vars_to_envs(state: &StateOut, vars: Vec<ConfigVar>) -> Result<HashMap<String, String>, SecretError> {
     let mut envs = HashMap::<String, String>::new();
     for e in vars {
         debug!("NOT YET IMPLEMENTED Getting pass for {:?}", e);
-        let pass = "notyet".to_owned();
-        // let pass = get_secret(state, &e.key).map_err(|source| {
-        //     let msg = format!("Failed to get password with key {} from passwords while loading envs into state!", e.key);
-        //     AuthError { msg, source }
-        // })?;
+        let pass = get_secret(Some(&state.context_name), Some(state.state_name()), "todo_hash", &e.key)?;
 
         envs.insert(e.env_name, pass);
     }
     Ok(envs)
 }
 
-/// Creates the state that is used to run the executable. Adds envs provided through CLI to `create_state`.
+fn state_paths(exe_path: Option<&str>) -> StatePaths {
+    let context_root = current_dir().unwrap();
+    let state_root = RelativePathBuf::new();
+    let state_path = RelativePathBuf::new();
+    let exe_dir = RelativePathBuf::new();
+    let exe_path = RelativePathBuf::from(exe_path.unwrap_or("entrypoint.sh"));
+
+    StatePaths {
+        context_root,
+        state_path,
+        state_root,
+        exe_dir,
+        exe_path
+    }
+}
+
+pub(crate) struct StatePathsResolved {
+    pub(crate) context_root: PathBuf,
+    pub(crate) state_root: PathBuf,
+    pub(crate) state_path: RelativePathBuf,
+    pub(crate) exe_dir: PathBuf,
+    pub(crate) exe_path: RelativePathBuf,
+}
+
+pub(crate) fn resolve_paths(state_paths: StatePaths) -> StatePathsResolved {
+    StatePathsResolved {
+        state_root: state_paths.state_root.to_path(&state_paths.context_root),
+        state_path: state_paths.state_path,
+        exe_dir: state_paths.exe_dir.to_path(&state_paths.context_root),
+        exe_path: state_paths.exe_path,
+        context_root: state_paths.context_root
+    }
+}
+
+/// Creates the state that is used to run the executable.
 pub(crate) fn create_state_run(
-    exe_name: Option<String>,
+    exe_path: Option<&str>,
     envs: Vec<String>,
-) -> Result<State, Report> {
+) -> Result<StateOut, Report> {
     // Exits when the function returns
     let run_state_span = span!(Level::DEBUG, "run_state");
     let _enter = run_state_span.enter();
 
-    let path = current_dir().unwrap();
-    let exe_name = exe_name.unwrap();
+    let paths = state_paths(exe_path);
     let secret_vars = parse_cli_vars(envs);
-    let envs = secret_vars_to_envs(secret_vars).unwrap();
-    Ok(State {
-        exe_name,
-        path,
-        envs,
-    })
+    let mut state = StateOut {
+        context_name: paths.context_root.to_str().wrap_err(format!("Path {:?} is not valid Unicode!", paths.context_root))?.to_owned(),
+        paths,
+        envs: HashMap::new(),
+    };
+
+    state.envs = secret_vars_to_envs(&state, secret_vars).unwrap();
+    Ok(state)
 }

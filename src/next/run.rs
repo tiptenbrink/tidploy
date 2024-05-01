@@ -1,4 +1,5 @@
 use color_eyre::eyre::{Context, Report};
+use relative_path::RelativePathBuf;
 use tracing::{debug, instrument};
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
 
 use super::{
     process::{run_entrypoint, EntrypointOut},
-    state::create_state_run as create_state_run_next,
+    state::{create_state_run as create_state_run_next, resolve_paths},
 };
 
 pub(crate) fn run_command(
@@ -65,7 +66,9 @@ pub(crate) fn run_command_input_old_state(
 
     // let state = extra_envs(state);
 
-    run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs, input_bytes)
+    let relative_path = RelativePathBuf::from(&state.exe_name);
+
+    run_entrypoint(state.deploy_dir(), &relative_path, state.envs, input_bytes)
 }
 
 #[instrument(name = "run", level = "debug", skip_all)]
@@ -74,7 +77,9 @@ pub(crate) fn run_command_input(
     variables: Vec<String>,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
-    let state = create_state_run_next(executable, variables)?;
+    let state = create_state_run_next(executable.as_deref(), variables)?;
 
-    run_entrypoint(state.path, &state.exe_name, state.envs, input_bytes)
+    let resolved_paths = resolve_paths(state.paths);
+
+    run_entrypoint(&resolved_paths.exe_dir, &resolved_paths.exe_path, state.envs, input_bytes)
 }

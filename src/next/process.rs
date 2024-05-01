@@ -1,5 +1,6 @@
 use color_eyre::eyre::{Context, Report};
 use duct::cmd;
+use relative_path::RelativePath;
 use std::io::{stdout, Read, Write};
 use std::process::ExitStatus;
 use std::str;
@@ -16,12 +17,12 @@ pub struct EntrypointOut {
 /// child process will just inherit the stdin of the tidploy process.
 pub(crate) fn run_entrypoint<P: AsRef<Path>>(
     entrypoint_dir: P,
-    entrypoint: &str,
+    entrypoint: &RelativePath,
     envs: HashMap<String, String>,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
     println!("Running {}!", &entrypoint);
-    let program_path = entrypoint_dir.as_ref().join(entrypoint);
+    let program_path = entrypoint.to_path(entrypoint_dir.as_ref());
     // Use parent process env variables as base
     let mut combined_envs: HashMap<_, _> = std::env::vars().collect();
     combined_envs.extend(envs);

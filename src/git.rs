@@ -228,6 +228,10 @@ pub(crate) fn checkout(repo_path: &Path, commit_sha: &str) -> Result<(), RepoErr
 }
 
 pub(crate) fn checkout_path(repo_path: &Path, deploy_path: &RelativePath) -> Result<(), RepoError> {
+    checkout_paths(repo_path, vec![deploy_path])
+}
+
+pub(crate) fn checkout_paths(repo_path: &Path, paths: Vec<&RelativePath>) -> Result<(), RepoError> {
     if !repo_path.exists() {
         return Err(RepoError::NotCreated);
     }
@@ -235,17 +239,19 @@ pub(crate) fn checkout_path(repo_path: &Path, deploy_path: &RelativePath) -> Res
     let mut sp = Spinner::new(
         spinners::Line,
         format!(
-            "Sparse-checkout repository to deploy path {}...",
-            deploy_path
+            "Sparse-checkout repository to paths {:?}...",
+            paths
         ),
         None,
     );
+
+    let paths = paths.iter().map(|p| p.as_str()).collect::<Vec<&str>>().join(" ");
 
     let _repo_clone_stdout = Cmd::new("git")
         .current_dir(repo_path)
         .arg("sparse-checkout")
         .arg("set")
-        .arg(deploy_path.as_str())
+        .arg(paths.clone())
         .stdout(Stdio::piped())
         .output()
         .map_err(|e| {
@@ -256,8 +262,8 @@ pub(crate) fn checkout_path(repo_path: &Path, deploy_path: &RelativePath) -> Res
         })?;
 
     let success_msg = format!(
-        "Sparse checked out repository to deploy path {}!",
-        deploy_path
+        "Sparse checked out repository to paths {:?}!",
+        paths
     );
     sp.success(&success_msg);
 
