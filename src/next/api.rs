@@ -1,4 +1,4 @@
-use super::run::run_command as inner_run_command;
+use super::run::run_command_input as inner_run_command;
 use crate::state::CliEnvState;
 use color_eyre::eyre::Report;
 use thiserror::Error as ThisError;
@@ -45,7 +45,8 @@ impl Default for GlobalArguments {
 pub struct RunArguments {
     pub executable: Option<String>,
     pub variables: Vec<String>,
-    pub archive: Option<String>
+    pub archive: Option<String>,
+    pub input_bytes: Option<Vec<u8>>
 }
 
 impl Default for RunArguments {
@@ -53,7 +54,8 @@ impl Default for RunArguments {
         RunArguments {
             executable: None,
             variables: Vec::new(),
-            archive: None
+            archive: None,
+            input_bytes: None
         }
     }
 }
@@ -79,7 +81,7 @@ pub struct CommandError {
 }
 
 pub fn run_command(global_args: GlobalArguments, args: RunArguments) -> Result<EntrypointOut, CommandError> {
-    inner_run_command(global_args.into(), args.executable, args.variables, args.archive).map_err(|e|
+    inner_run_command(global_args.into(), args.executable, args.variables, args.archive, args.input_bytes).map_err(|e|
     CommandError {
         msg: "An error occurred in the inner application layer.".to_owned(),
         source: e

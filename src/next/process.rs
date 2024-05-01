@@ -1,53 +1,48 @@
-use color_eyre::eyre::{Context, ContextCompat, Report};
-use std::io::{stderr, stdout, Read, Write};
+use color_eyre::eyre::{Context, Report};
+use std::io::{stdout, Read, Write};
 use std::process::ExitStatus;
 use std::str;
 use duct::cmd;
-use std::thread::sleep;
-use std::time::Duration;
-/// This is purely application-level code, hence you would never want to reference it as a library.
-/// For this reason we do not really care about the exact errors and need not match on them.
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader},
-    path::Path,
-    process::{Command as Cmd, Stdio},
+    io::BufReader,
+    path::Path
 };
-use tracing::{debug, span, Level};
-
-/// Read output bytes into a string and trim any whitespace at the end.
-fn process_out(bytes: Vec<u8>) -> Result<String, Report> {
-    let mut output_string = String::from_utf8(bytes)
-        .wrap_err("Error occurred decoding process output bytes as UTF-8.")?;
-    // We use truncate to prevent having to copy the string, which could be quite large as it's
-    // the output of a whole program
-    let trim_len = output_string.trim_end().len();
-    output_string.truncate(trim_len);
-
-    Ok(output_string)
-}
+use tracing::{span, Level};
 
 pub struct EntrypointOut {
     pub out: String,
     pub exit: ExitStatus
 }
 
-/// Runs the entrypoint, sending the entrypoint's stdout and stderr to stdout
+/// Runs the entrypoint, sending the entrypoint's stdout and stderr to stdout. It adds the provided envs to 
+/// the envs of the tidploy process. `input_bytes` is useful mostly for testing, if set to None then the
+/// child process will just inherit the stdin of the tidploy process.
 pub(crate) fn run_entrypoint<P: AsRef<Path>>(
     entrypoint_dir: P,
     entrypoint: &str,
     envs: HashMap<String, String>,
+    input_bytes: Option<Vec<u8>>
 ) -> Result<EntrypointOut, Report> {
     println!("Running {}!", &entrypoint);
     let program_path = entrypoint_dir.as_ref().join(entrypoint);
+    // Use parent process env variables as base
     let mut combined_envs: HashMap<_, _> = std::env::vars().collect();
     combined_envs.extend(envs);
 
     let cmd_expr = cmd(&program_path, Vec::<String>::new())
         .dir(entrypoint_dir.as_ref())
-        .full_env(&combined_envs);
+        .full_env(&combined_envs)
+        .stderr_to_stdout();
 
-    let reader = cmd_expr.stderr_to_stdout().reader()?;
+    // This is useful for testing input
+    let cmd_expr = if let Some(input_bytes) = input_bytes {
+        cmd_expr.stdin_bytes(input_bytes)
+    } else {
+        cmd_expr
+    };
+
+    let reader = cmd_expr.reader()?;
     
     let entry_span = span!(Level::DEBUG, "entrypoint", path = program_path.to_str());
     let _enter = entry_span.enter();
@@ -80,30 +75,3 @@ pub(crate) fn run_entrypoint<P: AsRef<Path>>(
         exit
     })
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use std::env;
-
-//     use crate::git::git_root_dir;
-
-//     use super::*;
-
-//     #[test]
-//     fn test_run_entrypoint() {
-//         let current_dir = env::current_dir().unwrap();
-//         let project_dir = git_root_dir(&current_dir).unwrap();
-//         let project_path = Path::new(&project_dir).join("examples").join("run");
-
-//         run_entrypoint(project_path, "do_echo.sh", HashMap::new()).unwrap();
-//     }
-
-//     #[test]
-//     fn test_spawn() {
-//         let current_dir = env::current_dir().unwrap();
-//         let project_dir = git_root_dir(&current_dir).unwrap();
-//         let project_path = Path::new(&project_dir).join("examples").join("run");
-
-//         run_entrypoint(project_path, "do_echo.sh", HashMap::new()).unwrap();
-//     }
-// }

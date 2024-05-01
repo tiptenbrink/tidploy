@@ -49,3 +49,19 @@ fn test_stdout_stderr() -> Result<(), CommandError> {
 
     Ok(())
 }
+
+#[test]
+fn test_input() -> Result<(), CommandError> {
+    let mut global_args = GlobalArguments::default();
+    let mut args = RunArguments::default();
+    global_args.context = Some(StateContext::None);
+    args.executable = Some("examples/run/example_input.sh".to_owned());
+    args.input_bytes = Some("foo".into());
+
+    let output = run_command(global_args, args)?;
+    assert!(output.exit.success());
+
+    assert_eq!("You entered: foo\n", output.out);
+
+    Ok(())
+}

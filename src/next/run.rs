@@ -7,8 +7,13 @@ use crate::{archives::extract_archive, filesystem::get_dirs, state::{create_stat
 
 use super::{process::{run_entrypoint, EntrypointOut}, state::create_state_run};
 
-#[instrument(name = "run", level = "debug", skip_all)]
+
 pub(crate) fn run_command(cli_state: CliEnvState, executable: Option<String>, variables: Vec<String>, archive: Option<String>) -> Result<EntrypointOut, Report> {
+    run_command_input(cli_state, executable, variables, archive, None)
+}
+
+#[instrument(name = "run", level = "debug", skip_all)]
+pub(crate) fn run_command_input(cli_state: CliEnvState, executable: Option<String>, variables: Vec<String>, archive: Option<String>, input_bytes: Option<Vec<u8>>) -> Result<EntrypointOut, Report> {
     // Only loads archive if it is given, otherwise path is None
     // let state = if let Some(archive) = archive {
     //     let cache_dir = get_dirs().cache.as_path();
@@ -47,5 +52,5 @@ pub(crate) fn run_command(cli_state: CliEnvState, executable: Option<String>, va
 
     // let state = extra_envs(state);
 
-    run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs)
+    run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs, input_bytes)
 }
