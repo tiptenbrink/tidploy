@@ -228,3 +228,5 @@ This requires the following work on `tidploy`'s side:
 As you can see, we now have to parse the configuration twice! This could technically happen even more times, but each time we are building a final state closer to the rich state that allows us to actually run the application.
 
 ### State creation
+
+The first phase involves creating the state necessary to run the application. 

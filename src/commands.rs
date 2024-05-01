@@ -5,13 +5,13 @@ use crate::archives::{extract_archive, make_archive};
 use crate::errors::{ProcessError, RepoError};
 use crate::filesystem::get_dirs;
 use crate::git::{checkout, checkout_path, repo_clone, Repo};
-use crate::next::run::run_command;
+use crate::next::commands::NextSub;
+use crate::next::run::{run_command, run_command_input_old_state};
 use crate::secret::{secret_command, AuthError};
 
-use crate::next::process::run_entrypoint as next_run_entrypoint;
 use crate::process::run_entrypoint;
 use crate::state::{
-    create_state_create, create_state_run, extra_envs, CliEnvState, LoadError, State, StateContext
+    create_state_create, create_state_run, extra_envs, CliEnvState, LoadError, State, StateContext,
 };
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
 use base64::Engine;
@@ -19,7 +19,6 @@ use clap::{Parser, Subcommand};
 use color_eyre::eyre::Report;
 
 use std::fmt::Debug;
-use std::time::Instant;
 
 use thiserror::Error as ThisError;
 use tracing::span;
@@ -92,6 +91,8 @@ enum Commands {
         #[arg(long)]
         archive: Option<String>,
     },
+    /// Next version
+    Next(NextSub),
 }
 
 #[derive(ThisError, Debug)]
@@ -315,18 +316,31 @@ pub fn run_cli() -> Result<ExitCode, Report> {
             run_entrypoint(state.deploy_dir(), &state.exe_name, state.envs)
                 .map_err(ErrorRepr::Exe)?;
 
-                Ok(ExitCode::SUCCESS)
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Run {
             executable,
             variables,
             archive,
         } => {
-            let out = run_command(cli_state, executable, variables, archive)?;
+            let out = run_command_input_old_state(cli_state, executable, variables, archive, None)?;
             // If [process::ExitCode::from_raw] gets stabilized this can be simplified
             let code = u8::try_from(out.exit.code().unwrap_or(0))?;
 
             Ok(ExitCode::from(code))
         }
+        Commands::Next(next_sub) => match next_sub.subcommand {
+            crate::next::commands::NextCommands::Secret { key: _ } => todo!(),
+            crate::next::commands::NextCommands::Run {
+                executable,
+                variables,
+            } => {
+                let out = run_command(executable, variables)?;
+                // If [process::ExitCode::from_raw] gets stabilized this can be simplified
+                let code = u8::try_from(out.exit.code().unwrap_or(0))?;
+
+                Ok(ExitCode::from(code))
+            }
+        },
     }
 }

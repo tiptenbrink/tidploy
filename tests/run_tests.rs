@@ -29,7 +29,10 @@ fn test_spinner() -> Result<(), CommandError> {
     assert!(output.exit.success());
 
     // \u{8} is backspace, the final rendered output is only '/'
-    assert_eq!("\u{8}-\u{8}\\\u{8}|\u{8}/\u{8}-\u{8}\\\u{8}|\u{8}/\u{8}-\u{8}\\\u{8}|\u{8}/", output.out);
+    assert_eq!(
+        "\u{8}-\u{8}\\\u{8}|\u{8}/\u{8}-\u{8}\\\u{8}|\u{8}/\u{8}-\u{8}\\\u{8}|\u{8}/",
+        output.out
+    );
 
     Ok(())
 }

@@ -6,9 +6,9 @@ use thiserror::Error as ThisError;
 pub use super::process::EntrypointOut;
 pub use crate::state::StateContext;
 
-/// These represent global arguments that correspond to global args of the CLI (i.e. valid for all 
+/// These represent global arguments that correspond to global args of the CLI (i.e. valid for all
 /// subcomannds). To limit breaking changes, this struct is `non_exhaustive`.
-/// 
+///
 /// Instantiate GlobalArguments using:
 /// ```
 /// # use tidploy::GlobalArguments;
@@ -21,6 +21,7 @@ pub use crate::state::StateContext;
 /// global_args.deploy_path = Some("use/deploy".to_owned());
 /// ```
 #[non_exhaustive]
+#[derive(Default)]
 pub struct GlobalArguments {
     pub context: Option<StateContext>,
     pub repo_url: Option<String>,
@@ -28,36 +29,15 @@ pub struct GlobalArguments {
     pub tag: Option<String>,
 }
 
-impl Default for GlobalArguments {
-    fn default() -> Self {
-        GlobalArguments {
-            context: None,
-            repo_url: None,
-            deploy_path: None,
-            tag: None
-        }
-    }
-}
-
-/// These represent arguments that correspond to args of the CLI `run` subcommand. To limit breaking 
+/// These represent arguments that correspond to args of the CLI `run` subcommand. To limit breaking
 /// changes, this struct is `non_exhaustive`. See [GlobalArguments] for details on how to instantiate.
 #[non_exhaustive]
+#[derive(Default)]
 pub struct RunArguments {
     pub executable: Option<String>,
     pub variables: Vec<String>,
-    pub archive: Option<String>,
-    pub input_bytes: Option<Vec<u8>>
-}
-
-impl Default for RunArguments {
-    fn default() -> Self {
-        RunArguments {
-            executable: None,
-            variables: Vec::new(),
-            archive: None,
-            input_bytes: None
-        }
-    }
+    // pub archive: Option<String>,
+    pub input_bytes: Option<Vec<u8>>,
 }
 
 impl From<GlobalArguments> for CliEnvState {
@@ -77,13 +57,15 @@ impl From<GlobalArguments> for CliEnvState {
 #[error("{msg} {source}")]
 pub struct CommandError {
     pub msg: String,
-    source: Report
+    source: Report,
 }
 
-pub fn run_command(global_args: GlobalArguments, args: RunArguments) -> Result<EntrypointOut, CommandError> {
-    inner_run_command(global_args.into(), args.executable, args.variables, args.archive, args.input_bytes).map_err(|e|
-    CommandError {
+pub fn run_command(
+    _global_args: GlobalArguments,
+    args: RunArguments,
+) -> Result<EntrypointOut, CommandError> {
+    inner_run_command(args.executable, args.variables, args.input_bytes).map_err(|e| CommandError {
         msg: "An error occurred in the inner application layer.".to_owned(),
-        source: e
+        source: e,
     })
 }
