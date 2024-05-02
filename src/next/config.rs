@@ -24,6 +24,7 @@ pub(crate) struct ConfigScope {
     pub(crate) name: Option<String>,
     pub(crate) sub: Option<String>,
     pub(crate) service: Option<String>,
+    pub(crate) require_hash: Option<bool>
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -96,6 +97,7 @@ fn overwrite_scope(original: ConfigScope, replacing: ConfigScope) -> ConfigScope
         name: overwrite_option(original.name, replacing.name),
         sub: overwrite_option(original.sub, replacing.sub),
         service: overwrite_option(original.service, replacing.service),
+        require_hash: overwrite_option(original.require_hash, replacing.require_hash)
     }
 }
 

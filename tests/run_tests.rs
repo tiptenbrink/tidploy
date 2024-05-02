@@ -123,7 +123,7 @@ fn test_secret_get() -> Result<(), CommandError> {
     let context_path = PathBuf::from(context_root);
     let context = context_path.file_name().unwrap().to_str().unwrap();
 
-    let entry_key = format!("{}::tidploy_root::todo_hash:{}", context, key);
+    let entry_key = format!("{}::tidploy_root::tidploy_default_hash:{}", context, key);
     let _entry = TestEntry::new("tidploy_test_service_get", &entry_key, &pass);
 
     let global_args = GlobalArguments::default();

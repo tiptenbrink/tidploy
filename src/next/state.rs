@@ -68,77 +68,6 @@ impl StatePaths {
     }
 }
 
-// #[derive(Debug)]
-// pub(crate) struct State {
-//     pub(crate) context_name: String,
-//     pub(crate) paths: StatePaths,
-//     pub(crate) envs: HashMap<String, String>,
-//     /// This defaults to 'tidploy' almost everywhere, it is mostly used for testing
-//     pub(crate) service: String,
-// }
-
-// impl State {
-//     /// Creates a new state, initializing the context root as the current directory. The context name is
-//     /// derived from the directory name, with non-UTF-8 characters replaced by � (U+FFFD)
-//     fn new(state_in: StateIn) -> Result<Self, StateError> {
-//         let paths = StatePaths::new(state_in.context)?;
-
-//         let context_name = paths
-//             .context_root
-//             .file_name()
-//             .map(|s| s.to_string_lossy().to_string())
-//             .ok_or_else(|| {
-//                 StateErrorKind::InvalidRoot(paths.context_root.to_string_lossy().to_string())
-//             })
-//             .to_state_err(
-//                 "Getting context name from context root path for new state.".to_owned(),
-//             )?;
-
-//         Ok(State {
-//             context_name,
-//             paths,
-//             envs: HashMap::new(),
-//             service,
-//         })
-//     }
-
-//     pub(crate) fn state_name(&self) -> &str {
-//         let rel_name = self.paths.state_path.as_str();
-//         if rel_name.is_empty() {
-//             "tidploy_root"
-//         } else {
-//             rel_name
-//         }
-//     }
-
-//     // pub(crate) fn state_hash(&self) -> Result<String, StateError> {
-//     //     Ok("todo_hash".to_owned())
-//     // }
-// }
-
-// pub(crate) struct StatePathsResolved {
-//     pub(crate) context_root: PathBuf,
-//     pub(crate) state_root: PathBuf,
-//     pub(crate) state_path: RelativePathBuf,
-//     pub(crate) exe_dir: PathBuf,
-//     pub(crate) exe_path: RelativePathBuf,
-// }
-
-// pub(crate) struct ResolvedEnvironment {
-//     pub(crate) exe_dir: PathBuf,
-//     pub(crate) exe_path: RelativePathBuf,
-// }
-
-// pub(crate) fn resolve_paths(state_paths: StatePaths) -> StatePathsResolved {
-//     StatePathsResolved {
-//         state_root: state_paths.state_root.to_path(&state_paths.context_root),
-//         state_path: state_paths.state_path,
-//         exe_dir: state_paths.exe_dir.to_path(&state_paths.context_root),
-//         exe_path: state_paths.exe_path,
-//         context_root: state_paths.context_root,
-//     }
-// }
-
 /// Parses the list of strings given and interprets them as each pair of two being a secret key and target
 /// env name.
 pub(crate) fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
@@ -151,13 +80,6 @@ pub(crate) fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
         })
         .collect()
 }
-
-// pub(crate) fn create_state(state_in: StateIn) -> Result<State, StateError> {
-//     let state = State::new(state_in)?;
-
-//     debug!("Created state is {:?}", state);
-//     Ok(state)
-// }
 
 #[derive(Debug)]
 pub(crate) struct ResolveState {

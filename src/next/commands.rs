@@ -42,8 +42,13 @@ pub enum NextCommands {
 
     /// Run an entrypoint or archive created by download/deploy and load secrets
     Run {
+        /// Relative path of the executable relative to the resolution root.
         #[arg(short = 'x', long = "exe")]
         executable: Option<String>,
+
+        /// Working directory for execution of the executable relative to the resolution root.
+        #[arg(long = "exn-path")]
+        execution_path: Option<String>,
 
         /// Variables to load. Supply as many pairs of <key> <env var name> as needed.
         #[arg(short, num_args = 2)]
@@ -68,8 +73,9 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
         crate::next::commands::NextCommands::Run {
             executable,
             variables,
+            execution_path
         } => {
-            let out = run_command(state_in, None, executable, variables)?;
+            let out = run_command(state_in, None, executable, execution_path, variables)?;
             // If [process::ExitCode::from_raw] gets stabilized this can be simplified
             let code = u8::try_from(out.exit.code().unwrap_or(0))?;
 

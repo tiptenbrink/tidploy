@@ -45,15 +45,17 @@ fn set_keyring_secret(secret: &str, key: &str, service: &str) -> Result<(), Keyr
     Ok(())
 }
 
-fn key_from_scope(scope: &SecretScope, key: &str) -> String {
-    format!("{}::{}::{}:{}", scope.name, scope.sub, scope.hash, key)
+fn key_from_scope(scope: &SecretScope, key: &str, require_hash_match: bool) -> String {
+    let hash = if require_hash_match { &scope.hash } else { "tidploy_default_hash" };
+    
+    format!("{}::{}::{}:{}", scope.name, scope.sub, hash, key)
 }
 
 /// Gets secret using a key with format `<context_name>::<state_name>::<hash>:<key>`.
 #[instrument(name = "get_secret", level = "debug", skip_all)]
 pub(crate) fn get_secret(scope: &SecretScope, key: &str) -> Result<String, SecretError> {
     debug!("Getting secret with key {}", key);
-    let store_key = key_from_scope(scope, key);
+    let store_key = key_from_scope(scope, key, true);
 
     match get_keyring_secret(&store_key, &scope.service).map_err(|e| SecretKeyringError {
         msg: format!("Failed to get key {}", &store_key),
@@ -77,12 +79,20 @@ fn secret_prompt(
         prompt_password("Enter secret:\n")?
     };
 
-    let store_key = key_from_scope(scope, key);
+    let store_key = key_from_scope(scope, key, true);
 
     set_keyring_secret(&password, &store_key, &scope.service).map_err(|e| SecretKeyringError {
-        msg: format!("Failed to get key {}", &store_key),
+        msg: format!("Failed to set key {}", &store_key),
         source: e,
     })?;
+
+    let store_key_default_hash = key_from_scope(scope, key, false);
+
+    set_keyring_secret(&password, &store_key_default_hash, &scope.service).map_err(|e| SecretKeyringError {
+        msg: format!("Failed to set key {}", &store_key),
+        source: e,
+    })?;
+
     Ok(store_key)
 }
 

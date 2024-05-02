@@ -15,6 +15,7 @@ pub(crate) struct SecretScopeArguments {
     pub(crate) name: Option<String>,
     pub(crate) sub: Option<String>,
     pub(crate) service: Option<String>,
+    pub(crate) require_hash: Option<bool>,
 }
 
 impl SecretScopeArguments {
@@ -24,6 +25,7 @@ impl SecretScopeArguments {
             service: other.service.or(self.service),
             sub: other.sub.or(self.sub),
             name: other.name.or(self.name),
+            require_hash: other.require_hash.or(self.require_hash)
         }
     }
 }
@@ -34,6 +36,7 @@ impl From<ConfigScope> for SecretScopeArguments {
             service: value.service,
             name: value.name,
             sub: value.sub,
+            require_hash: value.require_hash
         }
     }
 }
@@ -101,6 +104,7 @@ fn env_scope_args() -> SecretScopeArguments {
             "TIDPLOY_SECRET_SCOPE_NAME" => scope_args.name = Some(v),
             "TIDPLOY_SECRET_SCOPE_SUB" => scope_args.sub = Some(v),
             "TIDPLOY_SECRET_SERVICE" => scope_args.service = Some(v),
+            "TIDPLOY_SECRET_REQUIRE_HASH" => scope_args.require_hash = Some(v.len() > 0),
             _ => {}
         }
     }
@@ -158,7 +162,7 @@ fn resolve_scope(
         service: scope_args.service.unwrap_or("tidploy".to_owned()),
         name: scope_args.name.unwrap_or(name.to_owned()),
         sub: scope_args.sub.unwrap_or(sub.to_owned()),
-        hash: hash.to_owned(),
+        hash: if scope_args.require_hash.unwrap_or(false) { hash.to_owned() } else { "tidploy_default_hash".to_owned() },
     }
 }
 

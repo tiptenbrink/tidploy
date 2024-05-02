@@ -23,9 +23,10 @@ pub(crate) fn run_command(
     state_in: StateIn,
     service: Option<String>,
     executable: Option<String>,
+    execution_path: Option<String>,
     variables: Vec<String>,
 ) -> Result<EntrypointOut, Report> {
-    run_command_input(state_in, service, executable, variables, None)
+    run_command_input(state_in, service, executable, execution_path, variables, None)
 }
 
 #[instrument(name = "run", level = "debug", skip_all)]
@@ -84,6 +85,7 @@ pub(crate) fn run_command_input(
     state_in: StateIn,
     service: Option<String>,
     executable: Option<String>,
+    execution_path: Option<String>,
     variables: Vec<String>,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
@@ -95,7 +97,7 @@ pub(crate) fn run_command_input(
     };
     let run_args = RunArguments {
         executable,
-        execution_path: None,
+        execution_path,
         envs: parse_cli_vars(variables),
         scope_args,
     };

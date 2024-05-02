@@ -43,6 +43,7 @@ impl From<GlobalArguments> for StateIn {
 #[derive(Default)]
 pub struct RunArguments {
     pub executable: Option<String>,
+    pub execution_path: Option<String>,
     pub variables: Vec<String>,
     pub service: Option<String>,
     pub input_bytes: Option<Vec<u8>>,
@@ -65,6 +66,7 @@ pub fn run_command(
         global_args.into(),
         args.service,
         args.executable,
+        args.execution_path,
         args.variables,
         args.input_bytes,
     )
