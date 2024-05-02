@@ -57,7 +57,7 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
         cwd_context,
     } = next_sub;
 
-    let mut state_in = StateIn::from_args(cwd_context);
+    let state_in = StateIn::from_args(cwd_context);
 
     match subcommand {
         crate::next::commands::NextCommands::Secret { key } => {

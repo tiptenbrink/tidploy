@@ -1,16 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use keyring::Entry;
 use test_log::test;
 
 use tidploy::{
     run_command, secret_command, CommandError, GlobalArguments, RunArguments, SecretArguments,
-    StateContext,
 };
 
 #[test]
 fn test_run() -> Result<(), CommandError> {
-    let mut global_args = GlobalArguments::default();
+    let global_args = GlobalArguments::default();
     let mut args = RunArguments::default();
     //global_args.context = Some(StateContext::None);
     args.executable = Some("examples/run/example_echo.sh".to_owned());
@@ -26,7 +25,7 @@ fn test_run() -> Result<(), CommandError> {
 
 #[test]
 fn test_spinner() -> Result<(), CommandError> {
-    let mut global_args = GlobalArguments::default();
+    let global_args = GlobalArguments::default();
     let mut args = RunArguments::default();
     //global_args.context = Some(StateContext::None);
     args.executable = Some("examples/run/example_spinner.sh".to_owned());
@@ -46,7 +45,7 @@ fn test_spinner() -> Result<(), CommandError> {
 /// This test checks whether the stderr and stdout are shown in the correct order.
 #[test]
 fn test_stdout_stderr() -> Result<(), CommandError> {
-    let mut global_args = GlobalArguments::default();
+    let global_args = GlobalArguments::default();
     let mut args = RunArguments::default();
     //global_args.context = Some(StateContext::None);
     args.executable = Some("examples/run/example_stderr.sh".to_owned());
@@ -61,7 +60,7 @@ fn test_stdout_stderr() -> Result<(), CommandError> {
 
 #[test]
 fn test_input() -> Result<(), CommandError> {
-    let mut global_args = GlobalArguments::default();
+    let global_args = GlobalArguments::default();
     let mut args = RunArguments::default();
     //global_args.context = Some(StateContext::None);
     args.executable = Some("examples/run/example_input.sh".to_owned());

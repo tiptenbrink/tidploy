@@ -80,7 +80,7 @@ pub(crate) fn run_command_input(
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
     debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
-    
+
     let state = create_state_run_next(state_in, executable.as_deref(), variables)?;
 
     let resolved_paths = resolve_paths(state.paths);

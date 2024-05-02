@@ -19,7 +19,7 @@ pub struct EntrypointOut {
 
 pub(crate) fn process_out(bytes: Vec<u8>, info: String) -> Result<String, ProcessError> {
     Ok(String::from_utf8(bytes)
-        .map_err(|e| ProcessError::Decode(info))?
+        .map_err(|_e| ProcessError::Decode(info))?
         .trim_end()
         .to_owned())
 }
@@ -30,7 +30,7 @@ pub(crate) fn process_complete_output<P, E, S>(
     args: Vec<S>,
 ) -> Result<EntrypointOut, ProcessError>
 where
-// This is pretty bad...
+    // This is pretty bad...
     P: Into<PathBuf> + Debug + Clone,
     E: IntoExecutablePath + Debug + Clone,
     S: AsRef<OsStr> + Debug,
@@ -51,7 +51,10 @@ where
 
     let out = process_out(output.stdout, "stdout".to_owned())?;
 
-    Ok(EntrypointOut { out, exit: output.status })
+    Ok(EntrypointOut {
+        out,
+        exit: output.status,
+    })
 }
 
 /// Runs the entrypoint, sending the entrypoint's stdout and stderr to stdout. It adds the provided envs to

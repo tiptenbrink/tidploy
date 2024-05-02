@@ -1,6 +1,5 @@
-use clap::builder::Str;
 use keyring::Error as KeyringError;
-use std::{fmt::Display, io::Error as IOError};
+use std::io::Error as IOError;
 use thiserror::Error as ThisError;
 use tracing_error::TracedError;
 
@@ -21,8 +20,6 @@ pub(crate) struct SecretKeyringError {
     pub(crate) source: KeyringError,
 }
 
-
-
 #[derive(ThisError, Debug)]
 #[error("{msg}\n{source}")]
 pub(crate) struct StateError {
@@ -40,7 +37,7 @@ pub(crate) enum StateErrorKind {
     #[error("{0}")]
     Secret(#[from] SecretError),
     #[error("{0}")]
-    Git(#[from] GitError)
+    Git(#[from] GitError),
 }
 
 pub trait WrapStateErr<T, E> {
@@ -51,8 +48,7 @@ impl<T, E> WrapStateErr<T, E> for Result<T, E>
 where
     E: Into<StateErrorKind> + Send + Sync + 'static,
 {
-    fn to_state_err(self, msg: String) -> Result<T, StateError>
-    {
+    fn to_state_err(self, msg: String) -> Result<T, StateError> {
         match self {
             Ok(t) => Ok(t),
             Err(e) => Err(StateError {

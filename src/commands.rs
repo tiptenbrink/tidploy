@@ -6,7 +6,7 @@ use crate::errors::{ProcessError, RepoError};
 use crate::filesystem::get_dirs;
 use crate::git::{checkout, checkout_path, repo_clone, Repo};
 use crate::next::commands::{match_command, NextSub};
-use crate::next::run::{run_command, run_command_input_old_state};
+use crate::next::run::run_command_input_old_state;
 use crate::secret::{secret_command, AuthError};
 
 use crate::process::run_entrypoint;

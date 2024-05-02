@@ -103,14 +103,15 @@ fn secret_prompt_from_state(
     key: &str,
     prompt: Option<String>,
 ) -> Result<String, StateError> {
-    Ok(secret_prompt(
+    secret_prompt(
         &state.service,
         &state.context_name,
         Some(state.state_name()),
         &state.state_hash()?,
         key,
         prompt,
-    ).to_state_err("Prompting for secret using state info.".to_owned())?)
+    )
+    .to_state_err("Prompting for secret using state info.".to_owned())
 }
 
 pub(crate) fn secret_command(
@@ -118,9 +119,12 @@ pub(crate) fn secret_command(
     key: &str,
     prompt: Option<String>,
 ) -> Result<String, Report> {
-    debug!("Secret command called with in_state {:?}, key {:?} and prompt {:?}", state_in, key, prompt);
-    
-    let mut state = create_state(state_in)?;
+    debug!(
+        "Secret command called with in_state {:?}, key {:?} and prompt {:?}",
+        state_in, key, prompt
+    );
+
+    let state = create_state(state_in)?;
 
     let store_key = secret_prompt_from_state(&state, key, prompt)?;
 

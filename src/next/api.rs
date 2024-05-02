@@ -1,7 +1,7 @@
 use super::run::run_command_input as inner_run_command;
 use super::secrets::secret_command as inner_secret_command;
 use super::state::StateIn;
-use crate::state::CliEnvState;
+
 use color_eyre::eyre::Report;
 use thiserror::Error as ThisError;
 
@@ -36,7 +36,7 @@ impl From<GlobalArguments> for StateIn {
     fn from(value: GlobalArguments) -> Self {
         let mut state = Self::from_args(value.cwd_context);
         state.service = value.service;
-        
+
         state
     }
 }

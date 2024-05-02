@@ -1,15 +1,15 @@
-use std::{collections::HashMap, default, env::current_dir, path::PathBuf};
+use std::{collections::HashMap, env::current_dir, path::PathBuf};
 
-use clap::ValueEnum;
-use color_eyre::eyre::{Context, ContextCompat, Report};
+use relative_path::RelativePathBuf;
+use tracing::{debug, instrument};
 
-use keyring::Entry;
-use relative_path::{RelativePath, RelativePathBuf};
-use tracing::{debug, instrument, span, Level};
+use crate::config::ConfigVar;
 
-use crate::{config::ConfigVar};
-
-use super::{errors::{SecretError, StateError, StateErrorKind, WrapStateErr}, git::git_root_dir, secrets::get_secret};
+use super::{
+    errors::{StateError, StateErrorKind, WrapStateErr},
+    git::git_root_dir,
+    secrets::get_secret,
+};
 
 #[derive(Debug)]
 pub(crate) enum InferContext {
@@ -56,10 +56,14 @@ impl StatePaths {
     /// Creates a StatePaths struct with the context root set to the current directory. The executable
     /// is set to a default of "entrypoint.sh".
     fn new(ctx_infer: InferContext) -> Result<Self, StateError> {
-        let current_dir = current_dir().to_state_err("Getting current dir for new StatePaths".to_owned())?;
+        let current_dir =
+            current_dir().to_state_err("Getting current dir for new StatePaths".to_owned())?;
         let context_root = match ctx_infer {
             InferContext::Cwd => current_dir,
-            InferContext::Git => PathBuf::from(git_root_dir(&current_dir).to_state_err("Getting Git root dir for new StatePaths".to_owned())?),
+            InferContext::Git => PathBuf::from(
+                git_root_dir(&current_dir)
+                    .to_state_err("Getting Git root dir for new StatePaths".to_owned())?,
+            ),
         };
         let state_root = RelativePathBuf::new();
         let state_path = RelativePathBuf::new();
@@ -99,7 +103,10 @@ impl State {
             .map(|s| s.to_string_lossy().to_string())
             .ok_or_else(|| {
                 StateErrorKind::InvalidRoot(paths.context_root.to_string_lossy().to_string())
-            }).to_state_err("Getting context name from context root path for new state.".to_owned())?;
+            })
+            .to_state_err(
+                "Getting context name from context root path for new state.".to_owned(),
+            )?;
 
         Ok(State {
             context_name,
@@ -109,9 +116,9 @@ impl State {
         })
     }
 
-    pub(crate) fn state_name<'a>(&'a self) -> &'a str {
+    pub(crate) fn state_name(&self) -> &str {
         let rel_name = self.paths.state_path.as_str();
-        if rel_name.len() == 0 {
+        if rel_name.is_empty() {
             "tidploy_root"
         } else {
             rel_name
@@ -137,7 +144,8 @@ fn secret_vars_to_envs(
             Some(state.state_name()),
             &state.state_hash()?,
             &e.key,
-        ).to_state_err("Getting secret for config var to create env map.".to_owned())?;
+        )
+        .to_state_err("Getting secret for config var to create env map.".to_owned())?;
 
         envs.insert(e.env_name, pass);
     }
@@ -182,7 +190,6 @@ pub(crate) fn create_state_run(
     exe_path: Option<&str>,
     envs: Vec<String>,
 ) -> Result<State, StateError> {
-
     let mut state = create_state(state_in)?;
     let secret_vars = parse_cli_vars(envs);
     state.envs = secret_vars_to_envs(&state, secret_vars)?;
