@@ -88,3 +88,45 @@ pub(crate) enum GitError {
     #[error("Process error trying to run Git! {0}")]
     IO(#[from] GitProcessError),
 }
+
+#[derive(ThisError, Debug)]
+#[error("{msg} {source}")]
+pub(crate) struct ConfigError {
+    pub(crate) msg: String,
+    pub(crate) source: ConfigErrorKind,
+}
+
+#[derive(Debug, ThisError)]
+pub(crate) enum ConfigErrorKind {
+    #[error("IO error during config load! {0}")]
+    IO(#[from] IOError),
+    #[error("Failed to parse config TOML! {0}")]
+    TOMLDecode(#[from] toml::de::Error),
+    #[error("Failed to parse config JSON! {0}")]
+    JSONDecode(#[from] serde_json::Error),
+}
+
+pub trait WrapConfigErr<T, E> {
+    fn to_config_err(self, msg: String) -> Result<T, ConfigError>;
+}
+
+impl<T, E> WrapConfigErr<T, E> for Result<T, E>
+where
+    E: Into<ConfigErrorKind> + Send + Sync + 'static,
+{
+    fn to_config_err(self, msg: String) -> Result<T, ConfigError> {
+        match self {
+            Ok(t) => Ok(t),
+            Err(e) => Err(ConfigError {
+                msg,
+                source: e.into(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub(crate) enum ResolutionError {
+    #[error("Failed to resolve configs! {0}")]
+    Config(#[from] ConfigError),
+}

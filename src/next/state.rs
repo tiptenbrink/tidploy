@@ -160,6 +160,18 @@ pub(crate) struct StatePathsResolved {
     pub(crate) exe_path: RelativePathBuf,
 }
 
+pub(crate) struct Scope {
+    pub(crate) service: String,
+    pub(crate) name: String,
+    pub(crate) sub: String,
+    pub(crate) hash: String
+}
+
+pub(crate) struct ResolvedEnvironment {
+    pub(crate) exe_dir: PathBuf,
+    pub(crate) exe_path: RelativePathBuf,
+}
+
 pub(crate) fn resolve_paths(state_paths: StatePaths) -> StatePathsResolved {
     StatePathsResolved {
         state_root: state_paths.state_root.to_path(&state_paths.context_root),
