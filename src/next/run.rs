@@ -10,14 +10,15 @@ use crate::{
 
 use super::{
     process::{run_entrypoint, EntrypointOut},
-    state::{create_state_run as create_state_run_next, resolve_paths},
+    state::{create_state_run as create_state_run_next, resolve_paths, StateIn},
 };
 
 pub(crate) fn run_command(
+    state_in: StateIn,
     executable: Option<String>,
     variables: Vec<String>,
 ) -> Result<EntrypointOut, Report> {
-    run_command_input(executable, variables, None)
+    run_command_input(state_in, executable, variables, None)
 }
 
 #[instrument(name = "run", level = "debug", skip_all)]
@@ -73,11 +74,12 @@ pub(crate) fn run_command_input_old_state(
 
 #[instrument(name = "run", level = "debug", skip_all)]
 pub(crate) fn run_command_input(
+    state_in: StateIn,
     executable: Option<String>,
     variables: Vec<String>,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
-    let state = create_state_run_next(executable.as_deref(), variables)?;
+    let state = create_state_run_next(state_in, executable.as_deref(), variables)?;
 
     let resolved_paths = resolve_paths(state.paths);
 

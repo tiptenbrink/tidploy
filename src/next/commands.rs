@@ -1,14 +1,38 @@
+use std::process::ExitCode;
+
 use clap::{Args, Subcommand};
+use color_eyre::eyre::Report;
+
+use super::{run::run_command, secrets::secret_command, state::StateIn};
 
 #[derive(Debug, Args)]
 pub struct NextSub {
     #[clap(subcommand)]
     pub subcommand: NextCommands,
+
+    // /// Contexts other than git-remote (default) are not fully supported.
+    // #[arg(long, value_enum, global = true)]
+    // context: Option<StateContext>,
+
+    // /// Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository.
+    // /// Set to 'default' to not set it.
+    // /// Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url'
+    // /// For infering, it looks at the URL set to the 'origin' remote.
+    // #[arg(short, long, global = true)]
+    // repo: Option<String>,
+
+    // /// The git reference (commit or tag) to use.
+    // #[arg(short, long, global = true)]
+    // tag: Option<String>,
+
+    // /// The path inside the repository that should be used as the primary config source.
+    // #[arg(short, long, global = true)]
+    // deploy_pth: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum NextCommands {
-    /// Save secret with key until reboot. Use the --tag option to scope it to a specific commit.
+    /// Save secret with key until reboot. 
     Secret { key: String },
 
     /// Run an entrypoint or archive created by download/deploy and load secrets
@@ -20,4 +44,26 @@ pub enum NextCommands {
         #[arg(short, num_args = 2)]
         variables: Vec<String>,
     },
+}
+
+pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
+    let state_in = StateIn::default();
+    
+    match next_sub.subcommand {
+        crate::next::commands::NextCommands::Secret { key } => {
+            secret_command(state_in, &key, None)?;
+
+            Ok(ExitCode::from(0))
+        },
+        crate::next::commands::NextCommands::Run {
+            executable,
+            variables,
+        } => {
+            let out = run_command(state_in, executable, variables)?;
+            // If [process::ExitCode::from_raw] gets stabilized this can be simplified
+            let code = u8::try_from(out.exit.code().unwrap_or(0))?;
+
+            Ok(ExitCode::from(code))
+        }
+    }
 }
