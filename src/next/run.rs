@@ -3,22 +3,20 @@ use relative_path::RelativePathBuf;
 use tracing::{debug, instrument};
 
 use crate::{
-    archives::extract_archive,
-    filesystem::get_dirs,
-    state::{create_state_create, create_state_run, CliEnvState},
+    archives::extract_archive, filesystem::get_dirs, next::{resolve::{Resolve, RunArguments, SecretScopeArguments}, run, secrets::secret_vars_to_envs, state::{create_resolve_state, ResolveState}}, state::{create_state_create, create_state_run, CliEnvState}
 };
 
 use super::{
-    process::{run_entrypoint, EntrypointOut},
-    state::{create_state_run as create_state_run_next, resolve_paths, StateIn},
+    process::{run_entrypoint, EntrypointOut}, resolve::RunResolved, state::StateIn
 };
 
 pub(crate) fn run_command(
     state_in: StateIn,
+    service: Option<String>,
     executable: Option<String>,
     variables: Vec<String>,
 ) -> Result<EntrypointOut, Report> {
-    run_command_input(state_in, executable, variables, None)
+    run_command_input(state_in, service, executable, variables, None)
 }
 
 #[instrument(name = "run", level = "debug", skip_all)]
@@ -68,27 +66,57 @@ pub(crate) fn run_command_input_old_state(
     // let state = extra_envs(state);
 
     let relative_path = RelativePathBuf::from(&state.exe_name);
-
-    run_entrypoint(state.deploy_dir(), &relative_path, state.envs, input_bytes)
+    let exe_path = relative_path.to_path(&state.deploy_dir());
+    run_entrypoint(&state.deploy_dir(), &exe_path, state.envs, input_bytes)
 }
 
 #[instrument(name = "run", level = "debug", skip_all)]
 pub(crate) fn run_command_input(
     state_in: StateIn,
+    service: Option<String>,
     executable: Option<String>,
     variables: Vec<String>,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
     debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
+    
+    let mut scope_args = SecretScopeArguments::default();
+    scope_args.service = service;
+    let run_args = RunArguments { 
+        executable, 
+        execution_path: None, 
+        envs: Vec::new(), 
+        scope_args 
+    };
+    let ResolveState {
+        state_root,
+        state_path,
+        resolve_root,
+        name,
+        sub,
+        hash
+    } = create_resolve_state(state_in)?;
 
-    let state = create_state_run_next(state_in, executable.as_deref(), variables)?;
 
-    let resolved_paths = resolve_paths(state.paths);
+    let run_args = run_args.merge_env_config(&state_root, &state_path)?;
+    let run_resolved = run_args.resolve(&resolve_root, &name, &sub, &hash);
+    
+
+    run_unit_input(run_resolved, input_bytes)
+}
+
+pub(crate) fn run_unit_input(
+    run_resolved: RunResolved,
+    input_bytes: Option<Vec<u8>>,
+) -> Result<EntrypointOut, Report> {
+    //debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
+
+    let secret_vars = secret_vars_to_envs(&run_resolved.scope, run_resolved.envs)?;
 
     run_entrypoint(
-        &resolved_paths.exe_dir,
-        &resolved_paths.exe_path,
-        state.envs,
+        &run_resolved.execution_path,
+        &run_resolved.executable,
+        secret_vars,
         input_bytes,
     )
 }

@@ -1,17 +1,18 @@
 use std::{collections::HashMap, env, path::{Path, PathBuf}};
 
-use relative_path::RelativePath;
+use relative_path::{RelativePath, RelativePathBuf};
 
-use super::{config::traverse_configs, errors::ResolutionError};
+use super::{config::{merge_vars, traverse_configs, ArgumentConfig, ConfigScope, ConfigVar}, errors::ResolutionError};
 
 #[derive(Default)]
-struct SecretScopeArguments {
-    name: Option<String>,
-    sub: Option<String>,
-    service: Option<String>
+pub(crate) struct SecretScopeArguments {
+    pub(crate) name: Option<String>,
+    pub(crate) sub: Option<String>,
+    pub(crate) service: Option<String>
 }
 
 impl SecretScopeArguments {
+    /// Overrides fields with other if other has them defined
     fn merge(&self, other: Self) -> Self {
         Self {
             service: other.service.or(self.service),
@@ -21,12 +22,45 @@ impl SecretScopeArguments {
     }
 }
 
+impl From<ConfigScope> for SecretScopeArguments {
+    fn from(value: ConfigScope) -> Self {
+        Self {
+            service: value.service,
+            name: value.name,
+            sub: value.sub
+        }
+    }
+}
+
 #[derive(Default)]
-struct RunArguments {
-    executable: Option<String>,
-    execution_path: Option<String>,
-    envs: Vec<String>,
-    scope_args: SecretScopeArguments
+pub(crate) struct RunArguments {
+    pub(crate) executable: Option<String>,
+    pub(crate) execution_path: Option<String>,
+    pub(crate) envs: Vec<ConfigVar>,
+    pub(crate) scope_args: SecretScopeArguments
+}
+
+impl RunArguments {
+    /// Overrides fields with other if other has them defined
+    fn merge(&self, other: Self) -> Self {
+        Self {
+            executable: other.executable.or(self.executable),
+            execution_path: other.execution_path.or(self.execution_path),
+            envs: merge_vars(self.envs, other.envs),
+            scope_args: self.scope_args.merge(other.scope_args)
+        }
+    }
+}
+
+impl From<ArgumentConfig> for RunArguments {
+    fn from(value: ArgumentConfig) -> Self {
+        RunArguments {
+            executable: value.executable,
+            execution_path: value.execution_path,
+            envs: value.envs.unwrap_or_default(),
+            scope_args: value.scope.map(|s| s.into()).unwrap_or_default(),
+        }
+    }
 }
 
 struct SecretArguments {
@@ -34,18 +68,18 @@ struct SecretArguments {
     scope_args: SecretScopeArguments
 }
 
-struct SecretScope {
-    service: String,
-    name: String,
-    sub: String,
-    hash: String
+pub(crate) struct SecretScope {
+    pub(crate) service: String,
+    pub(crate) name: String,
+    pub(crate) sub: String,
+    pub(crate) hash: String
 }
 
-struct RunResolved {
-    executable: PathBuf,
-    execution_path: PathBuf,
-    envs: HashMap<String, String>,
-    scope: SecretScope
+pub(crate) struct RunResolved {
+    pub(crate) executable: PathBuf,
+    pub(crate) execution_path: PathBuf,
+    pub(crate) envs: Vec<ConfigVar>,
+    pub(crate) scope: SecretScope
 }
 
 struct SecretResolved {
@@ -53,15 +87,15 @@ struct SecretResolved {
     scope: SecretScope
 }
 
-enum OutArguments {
-    Secret,
-    Run
-}
-
 enum Arguments {
     Secret(SecretArguments),
     Run(RunArguments)
 }
+
+// enum ResolvedEnvironment {
+//     Run(RunResolved),
+//     Secret(SecretResolved)
+// }
 
 fn env_scope_args() -> SecretScopeArguments {
     let mut scope_args = SecretScopeArguments::default();
@@ -103,46 +137,79 @@ fn env_run_args() -> RunArguments {
     run_arguments
 }
 
-fn merge_scope(root_config: SecretScope, overwrite_config: SecretScope) -> SecretScope {
-    ArgumentConfig {
-        scope,
-        executable,
-        execution_path,
-        envs
+pub(crate) trait Resolve<Resolved> where Self: Sized {
+    fn merge_env_config(self, state_root: &Path, state_path: &RelativePath) -> Result<Self, ResolutionError>;
+
+    fn resolve(self, resolve_root: &Path, name: &str, sub: &str, hash: &str) -> Resolved;
+}
+
+fn resolve_scope(args: Arguments, name: &str, sub: &str, hash: &str) -> SecretScope {
+    let scope_args = match args {
+        Arguments::Run(run_args) => run_args.scope_args,
+        Arguments::Secret(secret_args) => secret_args.scope_args
+    };
+
+    SecretScope {
+        service: scope_args.service.unwrap_or("tidploy".to_owned()),
+        name: scope_args.name.unwrap_or(name.to_owned()),
+        sub: scope_args.sub.unwrap_or(sub.to_owned()),
+        hash: hash.to_owned()
     }
 }
 
-fn resolve(state_root: &Path, state_path: &RelativePath, resolve_root: &Path, hash: String, args: Arguments) -> Result<(), ResolutionError> {
-    let config = traverse_configs(state_root, state_path)?;
+impl Resolve<RunResolved> for RunArguments {
+    fn merge_env_config(self, state_root: &Path, state_path: &RelativePath) -> Result<Self, ResolutionError> {
+        let config = traverse_configs(state_root, state_path)?;
 
-    match args {
-        Arguments::Secret(secret_args) => {
-            let secret_args_env = env_secret_args();
+        let run_args_env = env_run_args();
 
-            let merged_args = SecretArguments {
-                key: secret_args.key,
-                scope_args: secret_args_env.scope_args.merge(secret_args.scope_args)
-            };
+        let merged_args = run_args_env.merge(self);
 
-            let merged_args = if let Some(config_args) = config.argument {
-                if let Some(config_scope) = config_args.scope {
-                    let scope_args = merged_args.scope_args;
-                    SecretArguments {
-                        key: merged_args.key,
-                        scope_args: SecretScopeArguments {
-                            service: scope_args.service.or(config_scope.service),
-                            name: scope_args.name.or(config_scope.name),
-                            sub: scope_args.sub.or(config_scope.sub),
-                        }
-                    }
-                } else {
-                    merged_args
-                }
-            } else {
-                merged_args
-            };
-        }
+        let config_run = config.argument.map(|a| RunArguments::from(a))
+            .unwrap_or_default();
+
+        Ok(config_run.merge(merged_args))
     }
 
-    Ok(())
+    fn resolve(self, resolve_root: &Path, name: &str, sub: &str, hash: &str) -> RunResolved {
+        let scope = resolve_scope(Arguments::Run(self), name, sub, hash);
+
+        let relative_exe = RelativePathBuf::from(self.executable.unwrap_or("".to_owned()));
+        let relative_exn_path = RelativePathBuf::from(self.execution_path.unwrap_or("".to_owned()));
+        RunResolved {
+            executable: relative_exe.to_path(resolve_root),
+            execution_path: relative_exn_path.to_path(resolve_root),
+            envs: self.envs,
+            scope
+        }
+    }
+}
+
+impl Resolve<SecretResolved> for SecretArguments {
+    fn merge_env_config(self, state_root: &Path, state_path: &RelativePath) -> Result<Self, ResolutionError> {
+        let config = traverse_configs(state_root, state_path)?;
+        
+        let secret_args_env = env_secret_args();
+
+        let mut merged_args = SecretArguments {
+            key: self.key,
+            scope_args: secret_args_env.scope_args.merge(self.scope_args)
+        };
+
+        let config_scope = config.argument.map(|a| a.scope).flatten().map(|s| SecretScopeArguments::from(s))
+            .unwrap_or_default();
+
+        merged_args.scope_args = config_scope.merge(merged_args.scope_args);
+
+        Ok(merged_args)
+    }
+
+    fn resolve(self, resolve_root: &Path, name: &str, sub: &str, hash: &str) -> SecretResolved {
+        let scope = resolve_scope(Arguments::Secret(self), name, sub, hash);
+        
+        SecretResolved {
+            key: self.key,
+            scope
+        }
+    }
 }

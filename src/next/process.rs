@@ -60,20 +60,19 @@ where
 /// Runs the entrypoint, sending the entrypoint's stdout and stderr to stdout. It adds the provided envs to
 /// the envs of the tidploy process. `input_bytes` is useful mostly for testing, if set to None then the
 /// child process will just inherit the stdin of the tidploy process.
-pub(crate) fn run_entrypoint<P: AsRef<Path>>(
-    entrypoint_dir: P,
-    entrypoint: &RelativePath,
+pub(crate) fn run_entrypoint(
+    working_dir: &Path,
+    entrypoint: &Path,
     envs: HashMap<String, String>,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
-    println!("Running {}!", &entrypoint);
-    let program_path = entrypoint.to_path(entrypoint_dir.as_ref());
+    println!("Running {:?} in working dir {:?}!", &entrypoint, &working_dir);
     // Use parent process env variables as base
     let mut combined_envs: HashMap<_, _> = std::env::vars().collect();
     combined_envs.extend(envs);
 
-    let cmd_expr = cmd(&program_path, Vec::<String>::new())
-        .dir(entrypoint_dir.as_ref())
+    let cmd_expr = cmd(entrypoint, Vec::<String>::new())
+        .dir(working_dir)
         .full_env(&combined_envs)
         .stderr_to_stdout()
         .unchecked();
@@ -87,7 +86,7 @@ pub(crate) fn run_entrypoint<P: AsRef<Path>>(
 
     let reader = cmd_expr.reader()?;
 
-    let entry_span = span!(Level::DEBUG, "entrypoint", path = program_path.to_str());
+    let entry_span = span!(Level::DEBUG, "entrypoint", path = entrypoint.to_string_lossy().as_ref());
     let _enter = entry_span.enter();
 
     let mut out: String = String::with_capacity(128);

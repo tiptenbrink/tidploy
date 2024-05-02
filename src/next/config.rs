@@ -86,35 +86,25 @@ fn overwrite_scope(original: ConfigScope, replacing: ConfigScope) -> ConfigScope
 }
 
 pub(crate) fn merge_vars(
-    root_vars: Option<Vec<ConfigVar>>,
-    overwrite_vars: Option<Vec<ConfigVar>>,
-) -> Option<Vec<ConfigVar>> {
-    if let Some(root_vars) = root_vars {
-        if let Some(overwrite_vars) = overwrite_vars {
-            let mut vars_map: HashMap<String, String> = root_vars
-                .iter()
-                .map(|v| (v.key.clone(), v.env_name.clone()))
-                .collect();
+    root_vars: Vec<ConfigVar>,
+    overwrite_vars: Vec<ConfigVar>,
+) -> Vec<ConfigVar> {
+    let mut vars_map: HashMap<String, String> = root_vars
+        .iter()
+        .map(|v| (v.key.clone(), v.env_name.clone()))
+        .collect();
 
-            for cfg_var in overwrite_vars {
-                vars_map.insert(cfg_var.key, cfg_var.env_name);
-            }
-
-            Some(
-                vars_map
-                    .into_iter()
-                    .map(|(k, v)| ConfigVar {
-                        env_name: v,
-                        key: k,
-                    })
-                    .collect(),
-            )
-        } else {
-            Some(root_vars)
-        }
-    } else {
-        overwrite_vars.clone()
+    for cfg_var in overwrite_vars {
+        vars_map.insert(cfg_var.key, cfg_var.env_name);
     }
+
+    vars_map
+            .into_iter()
+            .map(|(k, v)| ConfigVar {
+                env_name: v,
+                key: k,
+            })
+            .collect()
 }
 
 fn overwrite_arguments(root_config: ArgumentConfig, overwrite_config: ArgumentConfig) -> ArgumentConfig {
@@ -122,7 +112,7 @@ fn overwrite_arguments(root_config: ArgumentConfig, overwrite_config: ArgumentCo
     
     let execution_path = overwrite_option(root_config.execution_path, overwrite_config.execution_path);
     let executable = overwrite_option(root_config.executable, overwrite_config.executable);
-    let envs = merge_vars(root_config.envs, overwrite_config.envs);
+    let envs = merge_option(root_config.envs, overwrite_config.envs, &merge_vars);
 
     ArgumentConfig {
         scope,

@@ -26,7 +26,6 @@ impl Default for InferContext {
 #[derive(Default, Debug)]
 pub(crate) struct StateIn {
     pub(crate) context: InferContext,
-    pub(crate) service: Option<String>,
 }
 
 impl StateIn {
@@ -48,8 +47,6 @@ pub(crate) struct StatePaths {
     pub(crate) context_root: PathBuf,
     pub(crate) state_root: RelativePathBuf,
     pub(crate) state_path: RelativePathBuf,
-    pub(crate) exe_dir: RelativePathBuf,
-    pub(crate) exe_path: RelativePathBuf,
 }
 
 impl StatePaths {
@@ -67,120 +64,85 @@ impl StatePaths {
         };
         let state_root = RelativePathBuf::new();
         let state_path = RelativePathBuf::new();
-        let exe_dir = RelativePathBuf::new();
-        let exe_path = RelativePathBuf::from("entrypoint.sh");
 
         Ok(StatePaths {
             context_root,
             state_path,
             state_root,
-            exe_dir,
-            exe_path,
         })
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct State {
-    pub(crate) context_name: String,
-    pub(crate) paths: StatePaths,
-    pub(crate) envs: HashMap<String, String>,
-    /// This defaults to 'tidploy' almost everywhere, it is mostly used for testing
-    pub(crate) service: String,
-}
+// #[derive(Debug)]
+// pub(crate) struct State {
+//     pub(crate) context_name: String,
+//     pub(crate) paths: StatePaths,
+//     pub(crate) envs: HashMap<String, String>,
+//     /// This defaults to 'tidploy' almost everywhere, it is mostly used for testing
+//     pub(crate) service: String,
+// }
 
-impl State {
-    /// Creates a new state, initializing the context root as the current directory. The context name is
-    /// derived from the directory name, with non-UTF-8 characters replaced by � (U+FFFD)
-    fn new(state_in: StateIn) -> Result<Self, StateError> {
-        let paths = StatePaths::new(state_in.context)?;
+// impl State {
+//     /// Creates a new state, initializing the context root as the current directory. The context name is
+//     /// derived from the directory name, with non-UTF-8 characters replaced by � (U+FFFD)
+//     fn new(state_in: StateIn) -> Result<Self, StateError> {
+//         let paths = StatePaths::new(state_in.context)?;
 
-        let service = state_in.service.unwrap_or("tidploy".to_owned());
+//         let context_name = paths
+//             .context_root
+//             .file_name()
+//             .map(|s| s.to_string_lossy().to_string())
+//             .ok_or_else(|| {
+//                 StateErrorKind::InvalidRoot(paths.context_root.to_string_lossy().to_string())
+//             })
+//             .to_state_err(
+//                 "Getting context name from context root path for new state.".to_owned(),
+//             )?;
 
-        let context_name = paths
-            .context_root
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .ok_or_else(|| {
-                StateErrorKind::InvalidRoot(paths.context_root.to_string_lossy().to_string())
-            })
-            .to_state_err(
-                "Getting context name from context root path for new state.".to_owned(),
-            )?;
+//         Ok(State {
+//             context_name,
+//             paths,
+//             envs: HashMap::new(),
+//             service,
+//         })
+//     }
 
-        Ok(State {
-            context_name,
-            paths,
-            envs: HashMap::new(),
-            service,
-        })
-    }
+//     pub(crate) fn state_name(&self) -> &str {
+//         let rel_name = self.paths.state_path.as_str();
+//         if rel_name.is_empty() {
+//             "tidploy_root"
+//         } else {
+//             rel_name
+//         }
+//     }
 
-    pub(crate) fn state_name(&self) -> &str {
-        let rel_name = self.paths.state_path.as_str();
-        if rel_name.is_empty() {
-            "tidploy_root"
-        } else {
-            rel_name
-        }
-    }
+//     // pub(crate) fn state_hash(&self) -> Result<String, StateError> {
+//     //     Ok("todo_hash".to_owned())
+//     // }
+// }
 
-    pub(crate) fn state_hash(&self) -> Result<String, StateError> {
-        Ok("todo_hash".to_owned())
-    }
-}
+// pub(crate) struct StatePathsResolved {
+//     pub(crate) context_root: PathBuf,
+//     pub(crate) state_root: PathBuf,
+//     pub(crate) state_path: RelativePathBuf,
+//     pub(crate) exe_dir: PathBuf,
+//     pub(crate) exe_path: RelativePathBuf,
+// }
 
-#[instrument(name = "get_secret_vars", level = "debug", skip_all)]
-fn secret_vars_to_envs(
-    state: &State,
-    vars: Vec<ConfigVar>,
-) -> Result<HashMap<String, String>, StateError> {
-    let mut envs = HashMap::<String, String>::new();
-    for e in vars {
-        debug!("Getting pass for {:?}", e);
-        let pass = get_secret(
-            &state.service,
-            Some(&state.context_name),
-            Some(state.state_name()),
-            &state.state_hash()?,
-            &e.key,
-        )
-        .to_state_err("Getting secret for config var to create env map.".to_owned())?;
+// pub(crate) struct ResolvedEnvironment {
+//     pub(crate) exe_dir: PathBuf,
+//     pub(crate) exe_path: RelativePathBuf,
+// }
 
-        envs.insert(e.env_name, pass);
-    }
-    Ok(envs)
-}
-
-pub(crate) struct StatePathsResolved {
-    pub(crate) context_root: PathBuf,
-    pub(crate) state_root: PathBuf,
-    pub(crate) state_path: RelativePathBuf,
-    pub(crate) exe_dir: PathBuf,
-    pub(crate) exe_path: RelativePathBuf,
-}
-
-pub(crate) struct Scope {
-    pub(crate) service: String,
-    pub(crate) name: String,
-    pub(crate) sub: String,
-    pub(crate) hash: String
-}
-
-pub(crate) struct ResolvedEnvironment {
-    pub(crate) exe_dir: PathBuf,
-    pub(crate) exe_path: RelativePathBuf,
-}
-
-pub(crate) fn resolve_paths(state_paths: StatePaths) -> StatePathsResolved {
-    StatePathsResolved {
-        state_root: state_paths.state_root.to_path(&state_paths.context_root),
-        state_path: state_paths.state_path,
-        exe_dir: state_paths.exe_dir.to_path(&state_paths.context_root),
-        exe_path: state_paths.exe_path,
-        context_root: state_paths.context_root,
-    }
-}
+// pub(crate) fn resolve_paths(state_paths: StatePaths) -> StatePathsResolved {
+//     StatePathsResolved {
+//         state_root: state_paths.state_root.to_path(&state_paths.context_root),
+//         state_path: state_paths.state_path,
+//         exe_dir: state_paths.exe_dir.to_path(&state_paths.context_root),
+//         exe_path: state_paths.exe_path,
+//         context_root: state_paths.context_root,
+//     }
+// }
 
 /// Parses the list of strings given and interprets them as each pair of two being a secret key and target
 /// env name.
@@ -195,26 +157,43 @@ fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
         .collect()
 }
 
-/// Creates the state that is used to run the executable.
-#[instrument(name = "run_state", level = "debug", skip_all)]
-pub(crate) fn create_state_run(
-    state_in: StateIn,
-    exe_path: Option<&str>,
-    envs: Vec<String>,
-) -> Result<State, StateError> {
-    let mut state = create_state(state_in)?;
-    let secret_vars = parse_cli_vars(envs);
-    state.envs = secret_vars_to_envs(&state, secret_vars)?;
-    if let Some(exe_path) = exe_path {
-        state.paths.exe_path = RelativePathBuf::from(exe_path);
-    }
-    debug!("Created run state is {:?}", state);
-    Ok(state)
+// pub(crate) fn create_state(state_in: StateIn) -> Result<State, StateError> {
+//     let state = State::new(state_in)?;
+
+//     debug!("Created state is {:?}", state);
+//     Ok(state)
+// }
+
+#[derive(Debug)]
+pub(crate) struct ResolveState {
+    pub(crate) state_root: PathBuf,
+    pub(crate) state_path: RelativePathBuf,
+    pub(crate) resolve_root: PathBuf,
+    pub(crate) name: String,
+    pub(crate) sub: String,
+    pub(crate) hash: String,
 }
 
-pub(crate) fn create_state(state_in: StateIn) -> Result<State, StateError> {
-    let state = State::new(state_in)?;
+pub(crate) fn create_resolve_state(state_in: StateIn) -> Result<ResolveState, StateError> {
+    let paths = StatePaths::new(state_in.context)?;
 
-    debug!("Created state is {:?}", state);
-    Ok(state)
+    let name = paths
+        .context_root
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .ok_or_else(|| {
+            StateErrorKind::InvalidRoot(paths.context_root.to_string_lossy().to_string())
+        })
+        .to_state_err(
+            "Getting context name from context root path for new state.".to_owned(),
+        )?;
+
+    Ok(ResolveState {
+        state_root: paths.state_root.to_path(&paths.context_root),
+        state_path: paths.state_path,
+        resolve_root: paths.context_root,
+        name,
+        sub: "tidploy_root".to_owned(),
+        hash: "todo_hash".to_owned()
+    })
 }
