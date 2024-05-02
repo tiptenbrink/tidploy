@@ -25,7 +25,7 @@ pub use crate::state::StateContext;
 #[non_exhaustive]
 #[derive(Default)]
 pub struct GlobalArguments {
-    //pub context: Option<StateContext>,
+    pub cwd_context: bool,
     // pub repo_url: Option<String>,
     // pub deploy_path: Option<String>,
     // pub tag: Option<String>,
@@ -34,9 +34,10 @@ pub struct GlobalArguments {
 
 impl From<GlobalArguments> for StateIn {
     fn from(value: GlobalArguments) -> Self {
-        Self {
-            service: value.service
-        }
+        let mut state = Self::from_args(value.cwd_context);
+        state.service = value.service;
+        
+        state
     }
 }
 
@@ -64,18 +65,23 @@ pub fn run_command(
     global_args: GlobalArguments,
     args: RunArguments,
 ) -> Result<EntrypointOut, CommandError> {
-    inner_run_command(global_args.into(), args.executable, args.variables, args.input_bytes).map_err(|e| CommandError {
+    inner_run_command(
+        global_args.into(),
+        args.executable,
+        args.variables,
+        args.input_bytes,
+    )
+    .map_err(|e| CommandError {
         msg: "An error occurred in the inner application layer.".to_owned(),
         source: e,
     })
 }
 
-
 #[non_exhaustive]
 #[derive(Default)]
 pub struct SecretArguments {
     pub key: String,
-    pub prompt: Option<String>
+    pub prompt: Option<String>,
 }
 
 pub fn secret_command(

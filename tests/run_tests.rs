@@ -1,9 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use test_log::test;
 use keyring::Entry;
+use test_log::test;
 
-use tidploy::{run_command, secret_command, CommandError, GlobalArguments, RunArguments, SecretArguments, StateContext};
+use tidploy::{
+    run_command, secret_command, CommandError, GlobalArguments, RunArguments, SecretArguments,
+    StateContext,
+};
 
 #[test]
 fn test_run() -> Result<(), CommandError> {
@@ -109,9 +112,7 @@ impl TestEntry {
 
         entry.set_password(value).unwrap();
 
-        Self {
-            entry
-        }
+        Self { entry }
     }
 }
 

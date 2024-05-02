@@ -238,14 +238,15 @@ pub(crate) fn checkout_paths(repo_path: &Path, paths: Vec<&RelativePath>) -> Res
 
     let mut sp = Spinner::new(
         spinners::Line,
-        format!(
-            "Sparse-checkout repository to paths {:?}...",
-            paths
-        ),
+        format!("Sparse-checkout repository to paths {:?}...", paths),
         None,
     );
 
-    let paths = paths.iter().map(|p| p.as_str()).collect::<Vec<&str>>().join(" ");
+    let paths = paths
+        .iter()
+        .map(|p| p.as_str())
+        .collect::<Vec<&str>>()
+        .join(" ");
 
     let _repo_clone_stdout = Cmd::new("git")
         .current_dir(repo_path)
@@ -261,10 +262,7 @@ pub(crate) fn checkout_paths(repo_path: &Path, paths: Vec<&RelativePath>) -> Res
             )
         })?;
 
-    let success_msg = format!(
-        "Sparse checked out repository to paths {:?}!",
-        paths
-    );
+    let success_msg = format!("Sparse checked out repository to paths {:?}!", paths);
     sp.success(&success_msg);
 
     Ok(())

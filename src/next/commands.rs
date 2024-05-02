@@ -28,11 +28,16 @@ pub struct NextSub {
     // /// The path inside the repository that should be used as the primary config source.
     // #[arg(short, long, global = true)]
     // deploy_pth: Option<String>,
+    /// By default, tidploy searches for the root directory of the Git repository that the command is called
+    /// from and takes all other inputs as relative to there. To instead ignore the current Git repository
+    /// and simply take the current working directory as the root, enable this flag.
+    #[arg(short = 'c', long = "cwd")]
+    cwd_context: bool,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum NextCommands {
-    /// Save secret with key until reboot. 
+    /// Save secret with key until reboot.
     Secret { key: String },
 
     /// Run an entrypoint or archive created by download/deploy and load secrets
@@ -47,14 +52,19 @@ pub enum NextCommands {
 }
 
 pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
-    let state_in = StateIn::default();
-    
-    match next_sub.subcommand {
+    let NextSub {
+        subcommand,
+        cwd_context,
+    } = next_sub;
+
+    let mut state_in = StateIn::from_args(cwd_context);
+
+    match subcommand {
         crate::next::commands::NextCommands::Secret { key } => {
             secret_command(state_in, &key, None)?;
 
             Ok(ExitCode::from(0))
-        },
+        }
         crate::next::commands::NextCommands::Run {
             executable,
             variables,
