@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs, ops::ControlFlow, path::{Path, PathBuf}};
+use std::{
+    collections::HashMap,
+    fs,
+    ops::ControlFlow,
+    path::{Path, PathBuf},
+};
 
 use relative_path::{RelativePath, RelativePathBuf};
 use serde::Deserialize;
@@ -18,7 +23,7 @@ pub(crate) struct ConfigVar {
 pub(crate) struct ConfigScope {
     pub(crate) name: Option<String>,
     pub(crate) sub: Option<String>,
-    pub(crate) service: Option<String>
+    pub(crate) service: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -26,7 +31,7 @@ pub(crate) struct ArgumentConfig {
     pub(crate) scope: Option<ConfigScope>,
     pub(crate) executable: Option<String>,
     pub(crate) execution_path: Option<String>,
-    pub(crate) envs: Option<Vec<ConfigVar>>
+    pub(crate) envs: Option<Vec<ConfigVar>>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -34,9 +39,7 @@ pub(crate) struct Config {
     pub(crate) argument: Option<ArgumentConfig>,
 }
 
-pub(crate) fn load_dploy_config(
-    config_dir_path: &Path,
-) -> Result<Config, ConfigError> {
+pub(crate) fn load_dploy_config(config_dir_path: &Path) -> Result<Config, ConfigError> {
     let toml_path = config_dir_path.join("tidploy.toml");
     let json_path = config_dir_path.join("tidploy.json");
     let choose_json = json_path.exists();
@@ -47,12 +50,19 @@ pub(crate) fn load_dploy_config(
         return Ok(Config::default());
     }
 
-    let config_str = fs::read_to_string(&file_path).to_config_err(format!("Failed to read config file at {:?}", &file_path))?;
+    let config_str = fs::read_to_string(&file_path)
+        .to_config_err(format!("Failed to read config file at {:?}", &file_path))?;
 
     let dploy_config: Config = if choose_json {
-        serde_json::from_str(&config_str).to_config_err(format!("Failed to deserialize file {:?} to JSON", &file_path))?
+        serde_json::from_str(&config_str).to_config_err(format!(
+            "Failed to deserialize file {:?} to JSON",
+            &file_path
+        ))?
     } else {
-        toml::from_str(&config_str).to_config_err(format!("Failed to deserialize file {:?} to JSON", &file_path))?
+        toml::from_str(&config_str).to_config_err(format!(
+            "Failed to deserialize file {:?} to JSON",
+            &file_path
+        ))?
     };
 
     debug!("Loaded config at path {:?}: {:?}", file_path, dploy_config);
@@ -63,17 +73,21 @@ pub(crate) fn load_dploy_config(
 pub(crate) fn overwrite_option<T>(original: Option<T>, replacing: Option<T>) -> Option<T> {
     match replacing {
         Some(replacing) => Some(replacing),
-        None => original
+        None => original,
     }
 }
 
-pub(crate) fn merge_option<T>(original: Option<T>, replacing: Option<T>, merge_fn: &dyn Fn(T, T) -> T) -> Option<T> {
+pub(crate) fn merge_option<T>(
+    original: Option<T>,
+    replacing: Option<T>,
+    merge_fn: &dyn Fn(T, T) -> T,
+) -> Option<T> {
     match original {
         Some(original) => match replacing {
             Some(replacing) => Some(merge_fn(original, replacing)),
-            None => Some(original)
+            None => Some(original),
         },
-        None => replacing
+        None => replacing,
     }
 }
 
@@ -99,18 +113,22 @@ pub(crate) fn merge_vars(
     }
 
     vars_map
-            .into_iter()
-            .map(|(k, v)| ConfigVar {
-                env_name: v,
-                key: k,
-            })
-            .collect()
+        .into_iter()
+        .map(|(k, v)| ConfigVar {
+            env_name: v,
+            key: k,
+        })
+        .collect()
 }
 
-fn overwrite_arguments(root_config: ArgumentConfig, overwrite_config: ArgumentConfig) -> ArgumentConfig {
+fn overwrite_arguments(
+    root_config: ArgumentConfig,
+    overwrite_config: ArgumentConfig,
+) -> ArgumentConfig {
     let scope = merge_option(root_config.scope, overwrite_config.scope, &overwrite_scope);
-    
-    let execution_path = overwrite_option(root_config.execution_path, overwrite_config.execution_path);
+
+    let execution_path =
+        overwrite_option(root_config.execution_path, overwrite_config.execution_path);
     let executable = overwrite_option(root_config.executable, overwrite_config.executable);
     let envs = merge_option(root_config.envs, overwrite_config.envs, &merge_vars);
 
@@ -118,13 +136,17 @@ fn overwrite_arguments(root_config: ArgumentConfig, overwrite_config: ArgumentCo
         scope,
         executable,
         execution_path,
-        envs
+        envs,
     }
 }
 
 fn overwrite_config(root_config: Config, overwrite_config: Config) -> Config {
     Config {
-        argument: merge_option(root_config.argument, overwrite_config.argument, &overwrite_arguments),
+        argument: merge_option(
+            root_config.argument,
+            overwrite_config.argument,
+            &overwrite_arguments,
+        ),
     }
 }
 
@@ -152,7 +174,7 @@ pub(crate) fn traverse_configs(
 
         match inner_config {
             Ok(config) => ControlFlow::Continue(overwrite_config(state, config)),
-            Err(source) => ControlFlow::Break(source)
+            Err(source) => ControlFlow::Break(source),
         }
     });
 

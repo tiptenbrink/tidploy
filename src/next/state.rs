@@ -1,14 +1,9 @@
-use std::{collections::HashMap, env::current_dir, path::PathBuf};
+use std::{env::current_dir, path::PathBuf};
 
 use relative_path::RelativePathBuf;
-use tracing::{debug, instrument};
-
-use crate::config::ConfigVar;
 
 use super::{
-    errors::{StateError, StateErrorKind, WrapStateErr},
-    git::git_root_dir,
-    secrets::get_secret,
+    config::ConfigVar, errors::{StateError, StateErrorKind, WrapStateErr}, git::git_root_dir
 };
 
 #[derive(Debug)]
@@ -146,7 +141,7 @@ impl StatePaths {
 
 /// Parses the list of strings given and interprets them as each pair of two being a secret key and target
 /// env name.
-fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
+pub(crate) fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
     // Our chunk size is 2 so we know first and second exist
     // Any final element that does not have something to pair with will be ommitted
     envs.chunks_exact(2)
@@ -184,9 +179,7 @@ pub(crate) fn create_resolve_state(state_in: StateIn) -> Result<ResolveState, St
         .ok_or_else(|| {
             StateErrorKind::InvalidRoot(paths.context_root.to_string_lossy().to_string())
         })
-        .to_state_err(
-            "Getting context name from context root path for new state.".to_owned(),
-        )?;
+        .to_state_err("Getting context name from context root path for new state.".to_owned())?;
 
     Ok(ResolveState {
         state_root: paths.state_root.to_path(&paths.context_root),
@@ -194,6 +187,6 @@ pub(crate) fn create_resolve_state(state_in: StateIn) -> Result<ResolveState, St
         resolve_root: paths.context_root,
         name,
         sub: "tidploy_root".to_owned(),
-        hash: "todo_hash".to_owned()
+        hash: "todo_hash".to_owned(),
     })
 }

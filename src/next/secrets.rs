@@ -1,14 +1,20 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use color_eyre::eyre::Report;
 use keyring::{Entry, Error as KeyringError};
 use rpassword::prompt_password;
 use tracing::{debug, instrument};
 
-use crate::commands::TIDPLOY_DEFAULT;
+use crate::next::{
+        resolve::{Resolve, SecretArguments, SecretScopeArguments},
+        state::{create_resolve_state, ResolveState},
+    };
 
 use super::{
-    config::ConfigVar, errors::{SecretError, SecretKeyringError, StateError, WrapStateErr}, resolve::SecretScope, state::{create_state, StateIn}
+    config::ConfigVar,
+    errors::{SecretError, SecretKeyringError, StateError, WrapStateErr},
+    resolve::SecretScope,
+    state::StateIn,
 };
 
 fn get_keyring_secret(key: &str, service: &str) -> Result<Option<String>, KeyringError> {
@@ -39,19 +45,13 @@ fn set_keyring_secret(secret: &str, key: &str, service: &str) -> Result<(), Keyr
     Ok(())
 }
 
-fn key_from_scope(
-    scope: &SecretScope,
-    key: &str,
-) -> String {
+fn key_from_scope(scope: &SecretScope, key: &str) -> String {
     format!("{}::{}::{}:{}", scope.name, scope.sub, scope.hash, key)
 }
 
 /// Gets secret using a key with format `<context_name>::<state_name>::<hash>:<key>`.
 #[instrument(name = "get_secret", level = "debug", skip_all)]
-pub(crate) fn get_secret(
-    scope: &SecretScope,
-    key: &str,
-) -> Result<String, SecretError> {
+pub(crate) fn get_secret(scope: &SecretScope, key: &str) -> Result<String, SecretError> {
     debug!("Getting secret with key {}", key);
     let store_key = key_from_scope(scope, key);
 
@@ -86,23 +86,42 @@ fn secret_prompt(
     Ok(store_key)
 }
 
-// pub(crate) fn secret_command(
-//     state_in: StateIn,
-//     key: &str,
-//     prompt: Option<String>,
-// ) -> Result<String, Report> {
-//     debug!(
-//         "Secret command called with in_state {:?}, key {:?} and prompt {:?}",
-//         state_in, key, prompt
-//     );
+pub(crate) fn secret_command(
+    state_in: StateIn,
+    service: Option<String>,
+    key: String,
+    prompt: Option<String>,
+) -> Result<String, Report> {
+    debug!(
+        "Secret command called with in_state {:?}, key {:?} and prompt {:?}",
+        state_in, key, prompt
+    );
 
-//     let state = create_state(state_in)?;
+    let scope_args = SecretScopeArguments {
+        service,
+        ..Default::default()
+    };
+    let secret_args = SecretArguments {
+        key,
+        scope_args,
+    };
+    let ResolveState {
+        state_root,
+        state_path,
+        resolve_root,
+        name,
+        sub,
+        hash,
+    } = create_resolve_state(state_in)?;
 
-//     let store_key = secret_prompt(&state, key, prompt)?;
+    let secret_args = secret_args.merge_env_config(&state_root, &state_path)?;
+    let secret_resolved = secret_args.resolve(&resolve_root, &name, &sub, &hash);
 
-//     println!("Set secret with store key {}!", &store_key);
-//     Ok(store_key)
-// }
+    let store_key = secret_prompt(&secret_resolved.scope, &secret_resolved.key, prompt)?;
+
+    println!("Set secret with store key {}!", &store_key);
+    Ok(store_key)
+}
 
 pub(crate) fn secret_vars_to_envs(
     scope: &SecretScope,
@@ -112,7 +131,7 @@ pub(crate) fn secret_vars_to_envs(
     for e in vars {
         debug!("Getting pass for {:?}", e);
         let pass = get_secret(scope, &e.key)
-        .to_state_err("Getting secret for config var to create env map.".to_owned())?;
+            .to_state_err("Getting secret for config var to create env map.".to_owned())?;
 
         envs.insert(e.env_name, pass);
     }

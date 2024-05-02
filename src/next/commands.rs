@@ -61,7 +61,7 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
 
     match subcommand {
         crate::next::commands::NextCommands::Secret { key } => {
-            secret_command(state_in, &key, None)?;
+            secret_command(state_in, None, key, None)?;
 
             Ok(ExitCode::from(0))
         }
@@ -69,7 +69,7 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
             executable,
             variables,
         } => {
-            let out = run_command(state_in, executable, variables)?;
+            let out = run_command(state_in, None, executable, variables)?;
             // If [process::ExitCode::from_raw] gets stabilized this can be simplified
             let code = u8::try_from(out.exit.code().unwrap_or(0))?;
 

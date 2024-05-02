@@ -20,7 +20,7 @@ pub use crate::state::StateContext;
 /// ```
 /// # use tidploy::GlobalArguments;
 /// # let mut global_args = GlobalArguments::default();
-/// global_args.service = Some("tidpoy_test_service".to_owned());
+/// global_args.cwd_context = false;
 /// ```
 #[non_exhaustive]
 #[derive(Default)]
@@ -29,15 +29,11 @@ pub struct GlobalArguments {
     // pub repo_url: Option<String>,
     // pub deploy_path: Option<String>,
     // pub tag: Option<String>,
-    pub service: Option<String>,
 }
 
 impl From<GlobalArguments> for StateIn {
     fn from(value: GlobalArguments) -> Self {
-        let mut state = Self::from_args(value.cwd_context);
-        state.service = value.service;
-
-        state
+        Self::from_args(value.cwd_context)
     }
 }
 
@@ -48,7 +44,7 @@ impl From<GlobalArguments> for StateIn {
 pub struct RunArguments {
     pub executable: Option<String>,
     pub variables: Vec<String>,
-    // pub archive: Option<String>,
+    pub service: Option<String>,
     pub input_bytes: Option<Vec<u8>>,
 }
 
@@ -67,6 +63,7 @@ pub fn run_command(
 ) -> Result<EntrypointOut, CommandError> {
     inner_run_command(
         global_args.into(),
+        args.service,
         args.executable,
         args.variables,
         args.input_bytes,
@@ -81,6 +78,7 @@ pub fn run_command(
 #[derive(Default)]
 pub struct SecretArguments {
     pub key: String,
+    pub service: Option<String>,
     pub prompt: Option<String>,
 }
 
@@ -88,8 +86,10 @@ pub fn secret_command(
     global_args: GlobalArguments,
     args: SecretArguments,
 ) -> Result<String, CommandError> {
-    inner_secret_command(global_args.into(), &args.key, args.prompt).map_err(|e| CommandError {
-        msg: "An error occurred in the inner application layer.".to_owned(),
-        source: e,
+    inner_secret_command(global_args.into(), args.service, args.key, args.prompt).map_err(|e| {
+        CommandError {
+            msg: "An error occurred in the inner application layer.".to_owned(),
+            source: e,
+        }
     })
 }

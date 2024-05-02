@@ -76,12 +76,12 @@ fn test_input() -> Result<(), CommandError> {
 
 #[test]
 fn test_secret_set() -> Result<(), CommandError> {
-    let mut global_args = GlobalArguments::default();
+    let global_args = GlobalArguments::default();
     let mut args = SecretArguments::default();
     //global_args.context = Some(StateContext::None);
     let pass = "abc".to_owned();
     args.prompt = Some("abc".to_owned());
-    global_args.service = Some("tidploy_test_service".to_owned());
+    args.service = Some("tidploy_test_service".to_owned());
 
     let output = secret_command(global_args, args)?;
 
@@ -126,9 +126,9 @@ fn test_secret_get() -> Result<(), CommandError> {
     let entry_key = format!("{}::tidploy_root::todo_hash:{}", context, key);
     let _entry = TestEntry::new("tidploy_test_service_get", &entry_key, &pass);
 
-    let mut global_args = GlobalArguments::default();
+    let global_args = GlobalArguments::default();
     let mut args = RunArguments::default();
-    global_args.service = Some("tidploy_test_service_get".to_owned());
+    args.service = Some("tidploy_test_service_get".to_owned());
     //global_args.context = Some(StateContext::None);
     args.executable = Some("examples/run/example_secret.sh".to_owned());
     args.variables = vec![key, "TIDPLOY_SOME_SECRET".to_owned()];

@@ -3,11 +3,20 @@ use relative_path::RelativePathBuf;
 use tracing::{debug, instrument};
 
 use crate::{
-    archives::extract_archive, filesystem::get_dirs, next::{resolve::{Resolve, RunArguments, SecretScopeArguments}, run, secrets::secret_vars_to_envs, state::{create_resolve_state, ResolveState}}, state::{create_state_create, create_state_run, CliEnvState}
+    archives::extract_archive,
+    filesystem::get_dirs,
+    next::{
+        resolve::{Resolve, RunArguments, SecretScopeArguments},
+        secrets::secret_vars_to_envs,
+        state::{create_resolve_state, parse_cli_vars, ResolveState},
+    },
+    state::{create_state_create, create_state_run, CliEnvState},
 };
 
 use super::{
-    process::{run_entrypoint, EntrypointOut}, resolve::RunResolved, state::StateIn
+    process::{run_entrypoint, EntrypointOut},
+    resolve::RunResolved,
+    state::StateIn,
 };
 
 pub(crate) fn run_command(
@@ -66,7 +75,7 @@ pub(crate) fn run_command_input_old_state(
     // let state = extra_envs(state);
 
     let relative_path = RelativePathBuf::from(&state.exe_name);
-    let exe_path = relative_path.to_path(&state.deploy_dir());
+    let exe_path = relative_path.to_path(state.deploy_dir());
     run_entrypoint(&state.deploy_dir(), &exe_path, state.envs, input_bytes)
 }
 
@@ -79,14 +88,16 @@ pub(crate) fn run_command_input(
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
     debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
-    
-    let mut scope_args = SecretScopeArguments::default();
-    scope_args.service = service;
-    let run_args = RunArguments { 
-        executable, 
-        execution_path: None, 
-        envs: Vec::new(), 
-        scope_args 
+
+    let scope_args = SecretScopeArguments {
+        service,
+        ..Default::default()
+    };
+    let run_args = RunArguments {
+        executable,
+        execution_path: None,
+        envs: parse_cli_vars(variables),
+        scope_args,
     };
     let ResolveState {
         state_root,
@@ -94,13 +105,11 @@ pub(crate) fn run_command_input(
         resolve_root,
         name,
         sub,
-        hash
+        hash,
     } = create_resolve_state(state_in)?;
-
 
     let run_args = run_args.merge_env_config(&state_root, &state_path)?;
     let run_resolved = run_args.resolve(&resolve_root, &name, &sub, &hash);
-    
 
     run_unit_input(run_resolved, input_bytes)
 }

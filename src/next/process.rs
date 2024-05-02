@@ -1,6 +1,5 @@
 use color_eyre::eyre::{Context, Report};
 use duct::{cmd, IntoExecutablePath};
-use relative_path::RelativePath;
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::io::{stdout, Read, Write};
@@ -66,7 +65,10 @@ pub(crate) fn run_entrypoint(
     envs: HashMap<String, String>,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
-    println!("Running {:?} in working dir {:?}!", &entrypoint, &working_dir);
+    println!(
+        "Running {:?} in working dir {:?}!",
+        &entrypoint, &working_dir
+    );
     // Use parent process env variables as base
     let mut combined_envs: HashMap<_, _> = std::env::vars().collect();
     combined_envs.extend(envs);
@@ -86,7 +88,11 @@ pub(crate) fn run_entrypoint(
 
     let reader = cmd_expr.reader()?;
 
-    let entry_span = span!(Level::DEBUG, "entrypoint", path = entrypoint.to_string_lossy().as_ref());
+    let entry_span = span!(
+        Level::DEBUG,
+        "entrypoint",
+        path = entrypoint.to_string_lossy().as_ref()
+    );
     let _enter = entry_span.enter();
 
     let mut out: String = String::with_capacity(128);
