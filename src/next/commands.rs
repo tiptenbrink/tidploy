@@ -28,11 +28,21 @@ pub struct NextSub {
     // /// The path inside the repository that should be used as the primary config source.
     // #[arg(short, long, global = true)]
     // deploy_pth: Option<String>,
+
     /// By default, tidploy searches for the root directory of the Git repository that the command is called
     /// from and takes all other inputs as relative to there. To instead ignore the current Git repository
     /// and simply take the current working directory as the root, enable this flag.
     #[arg(short = 'c', long = "cwd")]
     cwd_context: bool,
+
+    /// Location relative to context root where you want to begin reading configs. Defaults to be equal 
+    /// to context root.
+    #[arg(long = "state-root")]
+    state_root: Option<String>,
+
+    /// Location relative to state root to stop reading configs, inclusive.
+    #[arg(long = "state-path")]
+    state_path: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -60,9 +70,11 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
     let NextSub {
         subcommand,
         cwd_context,
+        state_path,
+        state_root
     } = next_sub;
 
-    let state_in = StateIn::from_args(cwd_context);
+    let state_in = StateIn::from_args(cwd_context, state_path, state_root);
 
     match subcommand {
         crate::next::commands::NextCommands::Secret { key } => {

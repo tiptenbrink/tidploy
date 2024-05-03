@@ -4,10 +4,11 @@ use std::{
 };
 
 use relative_path::{RelativePath, RelativePathBuf};
+use tracing::instrument;
 
 use super::{
     config::{merge_vars, traverse_configs, ArgumentConfig, ConfigScope, ConfigVar},
-    errors::ResolutionError,
+    errors::ResolutionError, state::ResolveState,
 };
 
 #[derive(Default)]
@@ -139,9 +140,7 @@ fn env_run_args() -> RunArguments {
     run_arguments
 }
 
-pub(crate) trait Resolve<Resolved>
-where
-    Self: Sized,
+pub(crate) trait Resolve<Resolved>: Sized
 {
     fn merge_env_config(
         self,
@@ -234,4 +233,12 @@ impl Resolve<SecretResolved> for SecretArguments {
             scope,
         }
     }
+}
+
+/// Loads config, environment variables and resolves the final arguments to make them ready for final use
+#[instrument(name = "merge_resolve", level = "debug", skip_all)]
+pub(crate) fn merge_and_resolve<T>(unresolved_args: impl Resolve<T>, state: ResolveState) -> Result<T, ResolutionError> {
+    let merged_args = unresolved_args.merge_env_config(&state.state_root, &state.state_path)?;
+
+    Ok(merged_args.resolve(&state.resolve_root, &state.name, &state.sub, &state.hash))
 }

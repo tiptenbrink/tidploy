@@ -9,7 +9,7 @@ use relative_path::{RelativePath, RelativePathBuf};
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::next::errors::WrapConfigErr;
+use crate::{next::errors::WrapConfigErr, state::State};
 
 use super::errors::ConfigError;
 
@@ -35,9 +35,24 @@ pub(crate) struct ArgumentConfig {
     pub(crate) envs: Option<Vec<ConfigVar>>,
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub(crate) enum ConfigAddress {
+    Local { path: String },
+    Git { url: String, git_ref: String }
+}
+
+#[derive(Deserialize, Debug)]
+pub(crate) struct StateConfig {
+    pub(crate) state_root: Option<String>,
+    pub(crate) state_path: Option<String>,
+    pub(crate) address: Option<ConfigAddress>,
+}
+
 #[derive(Deserialize, Debug, Default)]
 pub(crate) struct Config {
     pub(crate) argument: Option<ArgumentConfig>,
+    pub(crate) state: Option<StateConfig>
 }
 
 pub(crate) fn load_dploy_config(config_dir_path: &Path) -> Result<Config, ConfigError> {
@@ -142,6 +157,14 @@ fn overwrite_arguments(
     }
 }
 
+fn overwrite_state_config(base: StateConfig, replacing: StateConfig) -> StateConfig {
+    StateConfig {
+        state_path: replacing.state_path.or(base.state_path),
+        state_root: replacing.state_root.or(base.state_root),
+        address: replacing.address.or(base.address)
+    }
+}
+
 fn overwrite_config(root_config: Config, overwrite_config: Config) -> Config {
     Config {
         argument: merge_option(
@@ -149,6 +172,7 @@ fn overwrite_config(root_config: Config, overwrite_config: Config) -> Config {
             overwrite_config.argument,
             &overwrite_arguments,
         ),
+        state: merge_option(root_config.state, overwrite_config.state, &overwrite_state_config)
     }
 }
 

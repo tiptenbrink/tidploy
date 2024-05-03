@@ -33,3 +33,17 @@ pub(crate) fn git_root_dir(path: &Path) -> Result<String, GitError> {
 
     run_git(path, args, "get git root dir")
 }
+
+#[derive(Debug, PartialEq)]
+pub(crate) struct Repo {
+    pub(crate) name: String,
+    pub(crate) encoded_url: String,
+    pub(crate) url: String,
+}
+
+impl Repo {
+    pub(crate) fn dir_name(&self) -> String {
+        format!("{}_{}", self.name, self.encoded_url)
+    }
+}
+

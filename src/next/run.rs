@@ -6,9 +6,9 @@ use crate::{
     archives::extract_archive,
     filesystem::get_dirs,
     next::{
-        resolve::{Resolve, RunArguments, SecretScopeArguments},
+        resolve::{merge_and_resolve, RunArguments, SecretScopeArguments},
         secrets::secret_vars_to_envs,
-        state::{create_resolve_state, parse_cli_vars, ResolveState},
+        state::{create_resolve_state, parse_cli_vars},
     },
     state::{create_state_create, create_state_run, CliEnvState},
 };
@@ -101,17 +101,9 @@ pub(crate) fn run_command_input(
         envs: parse_cli_vars(variables),
         scope_args,
     };
-    let ResolveState {
-        state_root,
-        state_path,
-        resolve_root,
-        name,
-        sub,
-        hash,
-    } = create_resolve_state(state_in)?;
+    let resolve_state = create_resolve_state(state_in)?;
 
-    let run_args = run_args.merge_env_config(&state_root, &state_path)?;
-    let run_resolved = run_args.resolve(&resolve_root, &name, &sub, &hash);
+    let run_resolved = merge_and_resolve(run_args, resolve_state)?;
 
     run_unit_input(run_resolved, input_bytes)
 }

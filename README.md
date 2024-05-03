@@ -245,3 +245,10 @@ By default, `tidploy` will look for the root of the Git repository that the curr
 #### Steps
 
 First, `tidploy` needs to find the 'address' of its deployment. It will keep resolving git repositories, load the state and see if it has now changed. It will keep doing this until it no longer changes. If the context is none and there is no address change in the loaded config, it will skip this step and work directly from the current directory.
+
+### Address
+
+An address is either just a filesystem path, or a Git repository URL combined with a ref. For ref we explicitly support three different types:
+- A branch (git/refs/heads): In this case it is your responsibility that the head is up to date
+- A commit
+- A tag (git/refs/tags)

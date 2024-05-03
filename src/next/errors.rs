@@ -3,6 +3,8 @@ use std::io::Error as IOError;
 use thiserror::Error as ThisError;
 use tracing_error::TracedError;
 
+use super::state::Address;
+
 #[derive(ThisError, Debug)]
 pub(crate) enum SecretError {
     #[error("Failed to get password from prompt! {0}")]
@@ -38,6 +40,10 @@ pub(crate) enum StateErrorKind {
     Secret(#[from] SecretError),
     #[error("{0}")]
     Git(#[from] GitError),
+    #[error("{0}")]
+    Config(#[from] ConfigError),
+    #[error("{0}")]
+    Address(#[from] AddressError)
 }
 
 pub trait WrapStateErr<T, E> {
@@ -129,4 +135,10 @@ where
 pub(crate) enum ResolutionError {
     #[error("Failed to resolve configs! {0}")]
     Config(#[from] ConfigError),
+}
+
+#[derive(Debug, ThisError)]
+pub(crate) enum AddressError {
+    #[error("Repo URL '{0}' doesn't end with /<name>.git and cannot be parsed!")]
+    RepoParse(String),
 }

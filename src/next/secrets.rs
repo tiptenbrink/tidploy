@@ -6,8 +6,8 @@ use rpassword::prompt_password;
 use tracing::{debug, instrument};
 
 use crate::next::{
-        resolve::{Resolve, SecretArguments, SecretScopeArguments},
-        state::{create_resolve_state, ResolveState},
+        resolve::{merge_and_resolve, SecretArguments, SecretScopeArguments},
+        state::create_resolve_state,
     };
 
 use super::{
@@ -115,17 +115,9 @@ pub(crate) fn secret_command(
         key,
         scope_args,
     };
-    let ResolveState {
-        state_root,
-        state_path,
-        resolve_root,
-        name,
-        sub,
-        hash,
-    } = create_resolve_state(state_in)?;
+    let resolve_state = create_resolve_state(state_in)?;
 
-    let secret_args = secret_args.merge_env_config(&state_root, &state_path)?;
-    let secret_resolved = secret_args.resolve(&resolve_root, &name, &sub, &hash);
+    let secret_resolved = merge_and_resolve(secret_args, resolve_state)?;
 
     let store_key = secret_prompt(&secret_resolved.scope, &secret_resolved.key, prompt)?;
 
