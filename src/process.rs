@@ -1,9 +1,10 @@
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader},
-    path::Path,
     process::{Command as Cmd, Stdio},
 };
+
+use camino::Utf8Path;
 
 use crate::errors::{ProcessError, ProcessErrorKind};
 
@@ -18,7 +19,7 @@ pub(crate) fn process_out(bytes: Vec<u8>, err_msg: String) -> Result<String, Pro
 }
 
 /// Convenience function to create a process error.
-fn err_ctx<P: AsRef<Path>>(e: impl Into<ProcessErrorKind>, info: &str, p: P) -> ProcessError {
+fn err_ctx<P: AsRef<Utf8Path>>(e: impl Into<ProcessErrorKind>, info: &str, p: P) -> ProcessError {
     let msg = format!(
         "IO error {} (running entrypoint at path: {:?})",
         info,
@@ -30,13 +31,14 @@ fn err_ctx<P: AsRef<Path>>(e: impl Into<ProcessErrorKind>, info: &str, p: P) -> 
     }
 }
 
-pub(crate) fn run_entrypoint<P: AsRef<Path>>(
+pub(crate) fn run_entrypoint<P: AsRef<Utf8Path>>(
     entrypoint_dir: P,
     entrypoint: &str,
     envs: HashMap<String, String>,
 ) -> Result<(), ProcessError> {
     println!("Running {}!", &entrypoint);
-    let program_path = entrypoint_dir.as_ref().join(entrypoint);
+    let entrypoint_dir = entrypoint_dir.as_ref();
+    let program_path = entrypoint_dir.join(entrypoint);
     let mut entrypoint_output = Cmd::new(&program_path)
         .current_dir(&entrypoint_dir)
         .envs(&envs)

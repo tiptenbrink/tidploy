@@ -2,14 +2,14 @@ use std::{
     collections::HashMap,
     fs,
     ops::ControlFlow,
-    path::{Path, PathBuf},
 };
 
+use camino::{Utf8Path, Utf8PathBuf};
 use relative_path::{RelativePath, RelativePathBuf};
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::{next::errors::WrapConfigErr, state::State};
+use crate::{filesystem::WrapToPath, next::errors::WrapConfigErr, state::State};
 
 use super::errors::ConfigError;
 
@@ -55,7 +55,7 @@ pub(crate) struct Config {
     pub(crate) state: Option<StateConfig>
 }
 
-pub(crate) fn load_dploy_config(config_dir_path: &Path) -> Result<Config, ConfigError> {
+pub(crate) fn load_dploy_config(config_dir_path: &Utf8Path) -> Result<Config, ConfigError> {
     let toml_path = config_dir_path.join("tidploy.toml");
     let json_path = config_dir_path.join("tidploy.json");
     let choose_json = json_path.exists();
@@ -177,7 +177,7 @@ fn overwrite_config(root_config: Config, overwrite_config: Config) -> Config {
 }
 
 pub(crate) fn traverse_configs(
-    start_path: &Path,
+    start_path: &Utf8Path,
     final_path: &RelativePath,
 ) -> Result<Config, ConfigError> {
     debug!(
@@ -187,11 +187,11 @@ pub(crate) fn traverse_configs(
 
     let root_config = load_dploy_config(start_path)?;
 
-    let paths: Vec<PathBuf> = final_path
+    let paths: Vec<Utf8PathBuf> = final_path
         .components()
         .scan(RelativePathBuf::new(), |state, component| {
             state.push(component);
-            Some(state.to_path(start_path))
+            Some(state.to_utf8_path(start_path))
         })
         .collect();
 

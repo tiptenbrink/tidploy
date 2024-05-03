@@ -1,7 +1,10 @@
-use std::{env::current_dir, path::PathBuf};
+use std::{env::current_dir};
 
+use camino::{Utf8Path, Utf8PathBuf};
 use relative_path::RelativePathBuf;
 use tracing::{debug, instrument};
+
+use crate::filesystem::WrapToPath;
 
 use super::{
     config::{traverse_configs, ConfigAddress, ConfigVar, StateConfig}, errors::{AddressError, StateError, StateErrorKind, WrapStateErr}, git::git_root_dir
@@ -44,7 +47,7 @@ impl StateIn {
 
 #[derive(Debug)]
 pub(crate) struct StatePaths {
-    pub(crate) context_root: PathBuf,
+    pub(crate) context_root: Utf8PathBuf,
     pub(crate) state_root: RelativePathBuf,
     pub(crate) state_path: RelativePathBuf,
 }
@@ -55,9 +58,13 @@ impl StatePaths {
     fn new(state_in: StateIn) -> Result<Self, StateError> {
         let current_dir =
             current_dir().to_state_err("Getting current dir for new StatePaths".to_owned())?;
+        let current_dir = Utf8PathBuf::from_path_buf(current_dir).map_err(|_e| StateError {
+            msg: "Current directory is not valid UTF-8!".to_owned(),
+            source: StateErrorKind::InvalidPath.into()
+        })?;
         let context_root = match state_in.context {
             InferContext::Cwd => current_dir,
-            InferContext::Git => PathBuf::from(
+            InferContext::Git => Utf8PathBuf::from(
                 git_root_dir(&current_dir)
                     .to_state_err("Getting Git root dir for new StatePaths".to_owned())?,
             ),
@@ -88,7 +95,7 @@ pub(crate) fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Address {
-    Local(PathBuf),
+    Local(Utf8PathBuf),
     Git(GitAddress)
 }
 
@@ -99,7 +106,7 @@ impl From<ConfigAddress> for Address {
                 url,
                 git_ref
             }),
-            ConfigAddress::Local { path } => Self::Local(PathBuf::from(path))
+            ConfigAddress::Local { path } => Self::Local(Utf8PathBuf::from(path))
         }
     }
 }
@@ -114,7 +121,7 @@ pub(crate) struct GitAddress {
 pub(crate) struct State {
     pub(crate) state_root: RelativePathBuf,
     pub(crate) state_path: RelativePathBuf,
-    pub(crate) context_root: PathBuf,
+    pub(crate) context_root: Utf8PathBuf,
     pub(crate) address: Option<Address>,
 }
 
@@ -151,9 +158,9 @@ impl State {
 
 #[derive(Debug)]
 pub(crate) struct ResolveState {
-    pub(crate) state_root: PathBuf,
+    pub(crate) state_root: Utf8PathBuf,
     pub(crate) state_path: RelativePathBuf,
-    pub(crate) resolve_root: PathBuf,
+    pub(crate) resolve_root: Utf8PathBuf,
     pub(crate) name: String,
     pub(crate) sub: String,
     pub(crate) hash: String,
@@ -164,7 +171,7 @@ fn converge_state(state: &State) -> Result<State, StateError> {
     let mut state = state.clone();
     let mut i = 0;
     let iter = loop {
-        let state_root_path = state.state_root.to_path(&state.context_root);
+        let state_root_path = state.state_root.to_utf8_path(&state.context_root);
         let config = traverse_configs(&state_root_path, &state.state_path).to_state_err("Failed to read configs for determining new state.".to_owned())?;
         let new_state = config.state.map(|c| (&state).merge_config(c)).unwrap_or(state.clone());
         if new_state == state {
@@ -231,16 +238,16 @@ pub(crate) fn create_resolve_state(state_in: StateIn) -> Result<ResolveState, St
     let name = state
         .context_root
         .file_name()
-        .map(|s| s.to_string_lossy().to_string())
+        .map(|s| s.to_string())
         .ok_or_else(|| {
-            StateErrorKind::InvalidRoot(state.context_root.to_string_lossy().to_string())
+            StateErrorKind::InvalidRoot(state.context_root.to_string())
         })
         .to_state_err("Getting context name from context root path for new state.".to_owned())?;
 
 
 
     Ok(ResolveState {
-        state_root: state.state_root.to_path(&state.context_root),
+        state_root: state.state_root.to_utf8_path(&state.context_root),
         state_path: state.state_path,
         resolve_root: state.context_root,
         name,

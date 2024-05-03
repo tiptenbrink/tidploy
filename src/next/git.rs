@@ -1,12 +1,14 @@
+use camino::Utf8Path;
+
 use super::{
     errors::{GitError, GitProcessError},
     process::process_complete_output,
 };
 use core::fmt::Debug;
-use std::{ffi::OsStr, path::Path};
+use std::ffi::OsStr;
 
 fn run_git<S: AsRef<OsStr> + Debug>(
-    working_dir: &Path,
+    working_dir: &Utf8Path,
     args: Vec<S>,
     op_name: &'static str,
 ) -> Result<String, GitError> {
@@ -28,7 +30,7 @@ fn run_git<S: AsRef<OsStr> + Debug>(
     }
 }
 
-pub(crate) fn git_root_dir(path: &Path) -> Result<String, GitError> {
+pub(crate) fn git_root_dir(path: &Utf8Path) -> Result<String, GitError> {
     let args = vec!["rev-parse", "--show-toplevel"];
 
     run_git(path, args, "get git root dir")

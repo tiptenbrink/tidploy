@@ -1,5 +1,4 @@
-use std::path::PathBuf;
-
+use camino::Utf8PathBuf;
 use keyring::Entry;
 use test_log::test;
 
@@ -120,8 +119,8 @@ fn test_secret_get() -> Result<(), CommandError> {
     let pass = "abc".to_owned();
     let key = "key".to_owned();
     let context_root = env!("CARGO_MANIFEST_DIR");
-    let context_path = PathBuf::from(context_root);
-    let context = context_path.file_name().unwrap().to_str().unwrap();
+    let context_path = Utf8PathBuf::from(context_root);
+    let context = context_path.file_name().unwrap();
 
     let entry_key = format!("{}::tidploy_root::tidploy_default_hash:{}", context, key);
     let _entry = TestEntry::new("tidploy_test_service_get", &entry_key, &pass);

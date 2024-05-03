@@ -32,6 +32,8 @@ pub(crate) struct StateError {
 
 #[derive(ThisError, Debug)]
 pub(crate) enum StateErrorKind {
+    #[error("Path is not valid UTF-8!")]
+    InvalidPath,
     #[error("State manipulation failed due to IO error! {0}")]
     IO(#[from] IOError),
     #[error("{0}")]

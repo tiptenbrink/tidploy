@@ -2,16 +2,16 @@ use crate::errors::{RepoError, TarError};
 use crate::filesystem::{FileError, FileErrorKind};
 use crate::process::process_out;
 use std::fs;
-use std::path::{Path, PathBuf};
+use camino::{Utf8Path, Utf8PathBuf};
 use std::process::Command as Cmd;
 use tracing::debug;
 
 pub(crate) fn make_archive(
-    archives_path: &Path,
-    current_dir: &Path,
+    archives_path: &Utf8Path,
+    current_dir: &Utf8Path,
     source_name: &str,
     target_name: &str,
-) -> Result<PathBuf, RepoError> {
+) -> Result<Utf8PathBuf, RepoError> {
     if !archives_path.exists() {
         fs::create_dir_all(archives_path).map_err(|e| {
             RepoError::from_io(
@@ -24,10 +24,7 @@ pub(crate) fn make_archive(
     let archive_name = format!("{}.tar.gz", target_name);
 
     let archive_path = archives_path.join(archive_name);
-    let archive_path_name = archive_path.to_str().ok_or(FileError {
-        msg: format!("Cannot represent path {:?} as string!", archive_path),
-        source: FileErrorKind::InvalidPath,
-    })?;
+    let archive_path_name = archive_path.as_str();
 
     if archive_path.exists() {
         return Ok(archive_path);
@@ -56,14 +53,11 @@ pub(crate) fn make_archive(
 }
 
 pub(crate) fn extract_archive(
-    archive_path: &Path,
-    current_dir: &Path,
+    archive_path: &Utf8Path,
+    current_dir: &Utf8Path,
     target_name: &str,
-) -> Result<PathBuf, RepoError> {
-    let archive_path_name = archive_path.to_str().ok_or(FileError {
-        msg: format!("Cannot represent path {:?} as string!", archive_path),
-        source: FileErrorKind::InvalidPath,
-    })?;
+) -> Result<Utf8PathBuf, RepoError> {
+    let archive_path_name = archive_path.as_str();
 
     let target_path = current_dir.join(target_name);
     debug!("Extracting archive {:?} to {:?}", archive_path, target_path);

@@ -1,10 +1,12 @@
 use std::{
     env,
-    path::{Path, PathBuf},
 };
 
+use camino::{Utf8Path, Utf8PathBuf};
 use relative_path::{RelativePath, RelativePathBuf};
 use tracing::instrument;
+
+use crate::filesystem::WrapToPath;
 
 use super::{
     config::{merge_vars, traverse_configs, ArgumentConfig, ConfigScope, ConfigVar},
@@ -86,8 +88,8 @@ pub(crate) struct SecretScope {
 }
 
 pub(crate) struct RunResolved {
-    pub(crate) executable: PathBuf,
-    pub(crate) execution_path: PathBuf,
+    pub(crate) executable: Utf8PathBuf,
+    pub(crate) execution_path: Utf8PathBuf,
     pub(crate) envs: Vec<ConfigVar>,
     pub(crate) scope: SecretScope,
 }
@@ -144,11 +146,11 @@ pub(crate) trait Resolve<Resolved>: Sized
 {
     fn merge_env_config(
         self,
-        state_root: &Path,
+        state_root: &Utf8Path,
         state_path: &RelativePath,
     ) -> Result<Self, ResolutionError>;
 
-    fn resolve(self, resolve_root: &Path, name: &str, sub: &str, hash: &str) -> Resolved;
+    fn resolve(self, resolve_root: &Utf8Path, name: &str, sub: &str, hash: &str) -> Resolved;
 }
 
 fn resolve_scope(
@@ -168,7 +170,7 @@ fn resolve_scope(
 impl Resolve<RunResolved> for RunArguments {
     fn merge_env_config(
         self,
-        state_root: &Path,
+        state_root: &Utf8Path,
         state_path: &RelativePath,
     ) -> Result<Self, ResolutionError> {
         let config = traverse_configs(state_root, state_path)?;
@@ -185,14 +187,14 @@ impl Resolve<RunResolved> for RunArguments {
         Ok(config_run.merge(merged_args))
     }
 
-    fn resolve(self, resolve_root: &Path, name: &str, sub: &str, hash: &str) -> RunResolved {
+    fn resolve(self, resolve_root: &Utf8Path, name: &str, sub: &str, hash: &str) -> RunResolved {
         let scope = resolve_scope(self.scope_args, name, sub, hash);
 
         let relative_exe = RelativePathBuf::from(self.executable.unwrap_or("".to_owned()));
         let relative_exn_path = RelativePathBuf::from(self.execution_path.unwrap_or("".to_owned()));
         RunResolved {
-            executable: relative_exe.to_path(resolve_root),
-            execution_path: relative_exn_path.to_path(resolve_root),
+            executable: relative_exe.to_utf8_path(resolve_root),
+            execution_path: relative_exn_path.to_utf8_path(resolve_root),
             envs: self.envs,
             scope,
         }
@@ -202,7 +204,7 @@ impl Resolve<RunResolved> for RunArguments {
 impl Resolve<SecretResolved> for SecretArguments {
     fn merge_env_config(
         self,
-        state_root: &Path,
+        state_root: &Utf8Path,
         state_path: &RelativePath,
     ) -> Result<Self, ResolutionError> {
         let config = traverse_configs(state_root, state_path)?;
@@ -225,7 +227,7 @@ impl Resolve<SecretResolved> for SecretArguments {
         Ok(merged_args)
     }
 
-    fn resolve(self, _resolve_root: &Path, name: &str, sub: &str, hash: &str) -> SecretResolved {
+    fn resolve(self, _resolve_root: &Utf8Path, name: &str, sub: &str, hash: &str) -> SecretResolved {
         let scope = resolve_scope(self.scope_args, name, sub, hash);
 
         SecretResolved {

@@ -1,17 +1,16 @@
 use crate::commands::{DEFAULT_GIT_LOCAL, DEFAULT_GIT_REMOTE, TIDPLOY_DEFAULT};
 use crate::config::{merge_vars, traverse_configs, ConfigError, ConfigVar, DployConfig};
 use crate::errors::{GitError, RelPathError, RepoParseError};
-use crate::filesystem::{get_current_dir, FileError};
+use crate::filesystem::{get_current_dir, FileError, WrapToPath};
 use crate::git::{git_root_dir, git_root_origin_url, parse_repo_url, rev_parse_tag, Repo};
 use crate::secret::{get_secret, AuthError};
 
+use camino::{Utf8Path, Utf8PathBuf};
 use clap::ValueEnum;
 
 use relative_path::{RelativePath, RelativePathBuf};
 
 use std::env::VarError;
-
-use std::path::{Path, PathBuf};
 use std::{collections::HashMap, env};
 use thiserror::Error as ThisError;
 
@@ -55,12 +54,12 @@ pub(crate) struct State {
     pub(crate) commit_sha: String,
     pub(crate) envs: HashMap<String, String>,
     pub(crate) exe_name: String,
-    pub(crate) root_dir: PathBuf,
+    pub(crate) root_dir: Utf8PathBuf,
 }
 
 impl State {
-    pub(crate) fn deploy_dir(&self) -> PathBuf {
-        let dir = self.deploy_path.to_path(&self.root_dir);
+    pub(crate) fn deploy_dir(&self) -> Utf8PathBuf {
+        let dir = self.deploy_path.to_utf8_path(&self.root_dir);
         debug!("Computed deploy_dir as {:?}", dir);
         dir
     }
@@ -223,8 +222,7 @@ fn set_state(
         ReadRepoMethod::Value(value) => value,
         ReadRepoMethod::Default => TIDPLOY_DEFAULT.to_owned(),
         ReadRepoMethod::GitRootRemote => git_root_origin_url(&state.root_dir)?,
-        // We assume paths will be UTF-8, as our root dir is almost certainly set from a UTF-8 string
-        ReadRepoMethod::GitRoot => state.root_dir.to_str().unwrap().to_owned(),
+        ReadRepoMethod::GitRoot => state.root_dir.as_str().to_owned(),
     };
 
     match repo_url.as_str() {
@@ -302,7 +300,7 @@ fn set_state(
 
 pub(crate) fn create_state_create(
     cli_state: CliEnvState,
-    project_path: Option<&Path>,
+    project_path: Option<&Utf8Path>,
     deploy_path: Option<&RelativePath>,
     load_tag: bool,
 ) -> Result<State, LoadError> {
@@ -323,7 +321,7 @@ pub(crate) fn create_state_run(
     cli_state: CliEnvState,
     exe_name: Option<String>,
     envs: Vec<String>,
-    path: Option<&Path>,
+    path: Option<&Utf8Path>,
     deploy_path: Option<&RelativePath>,
     load_tag: bool,
 ) -> Result<State, LoadError> {
@@ -345,7 +343,7 @@ pub(crate) fn create_state_run(
 pub(crate) fn create_state(
     cli_state: CliEnvState,
     cli_run_state: Option<CliEnvRunState>,
-    project_path: Option<&Path>,
+    project_path: Option<&Utf8Path>,
     deploy_path: Option<&RelativePath>,
     load_tag: bool,
 ) -> Result<State, LoadError> {
@@ -379,7 +377,7 @@ pub(crate) fn create_state(
         commit_sha: TIDPLOY_DEFAULT.to_owned(),
         envs: HashMap::<String, String>::new(),
         exe_name: TIDPLOY_DEFAULT.to_owned(),
-        root_dir: PathBuf::new(), // always replaced
+        root_dir: Utf8PathBuf::new(), // always replaced
     };
     debug!("Starting state is {:?}", state);
 
@@ -415,7 +413,7 @@ pub(crate) fn create_state(
     state.root_dir = match state.context {
         StateContext::None => current_dir,
         StateContext::GitLocal | StateContext::GitRemote => {
-            Path::new(&git_root_dir(&current_dir)?).to_owned()
+            Utf8Path::new(&git_root_dir(&current_dir)?).to_owned()
         }
     };
 

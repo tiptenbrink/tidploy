@@ -1,3 +1,4 @@
+use camino::Utf8Path;
 use relative_path::{RelativePath, RelativePathBuf};
 use serde::Deserialize;
 use std::{
@@ -127,7 +128,7 @@ fn overwrite_config(root_config: DployConfig, overwrite_config: DployConfig) -> 
 /// Looks at config at start_path and appends levels from final_path, looking at a config at every level. It then
 /// combines them.
 pub(crate) fn traverse_configs(
-    start_path: &Path,
+    start_path: &Utf8Path,
     final_path: &RelativePath,
 ) -> Result<DployConfig, ConfigError> {
     debug!(

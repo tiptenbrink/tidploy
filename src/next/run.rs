@@ -4,7 +4,7 @@ use tracing::{debug, instrument};
 
 use crate::{
     archives::extract_archive,
-    filesystem::get_dirs,
+    filesystem::{get_dirs, WrapToPath},
     next::{
         resolve::{merge_and_resolve, RunArguments, SecretScopeArguments},
         secrets::secret_vars_to_envs,
@@ -39,13 +39,13 @@ pub(crate) fn run_command_input_old_state(
 ) -> Result<EntrypointOut, Report> {
     // Only loads archive if it is given, otherwise path is None
     let state = if let Some(archive) = archive {
-        let cache_dir = get_dirs().cache.as_path();
+        let cache_dir = get_dirs().wrap_err("Cache is not UTF-8!")?.cache.as_path();
         let archive_path = cache_dir
             .join("archives")
             .join(&archive)
             .with_extension("tar.gz");
 
-        let tmp_dir = get_dirs().tmp.as_path();
+        let tmp_dir = get_dirs().wrap_err("Cache is not UTF-8!")?.tmp.as_path();
         let extracted_path =
             extract_archive(&archive_path, tmp_dir, &archive).wrap_err("Repo error.")?;
         debug!("Extracted and loaded archive at {:?}", &extracted_path);
@@ -76,7 +76,7 @@ pub(crate) fn run_command_input_old_state(
     // let state = extra_envs(state);
 
     let relative_path = RelativePathBuf::from(&state.exe_name);
-    let exe_path = relative_path.to_path(state.deploy_dir());
+    let exe_path = relative_path.to_utf8_path(state.deploy_dir());
     run_entrypoint(&state.deploy_dir(), &exe_path, state.envs, input_bytes)
 }
 

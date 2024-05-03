@@ -2,12 +2,12 @@ use crate::errors::{GitError, RepoError, RepoParseError};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
 use base64::Engine;
+use camino::Utf8Path;
 use relative_path::RelativePath;
 use spinoff::{spinners, Spinner};
 
 use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
 use std::process::{Command as Cmd, Stdio};
 use tracing::debug;
 
@@ -70,7 +70,7 @@ pub(crate) fn parse_repo_url(url: String) -> Result<Repo, RepoParseError> {
 }
 
 fn run_git<S: AsRef<OsStr>>(
-    current_dir: &Path,
+    current_dir: &Utf8Path,
     args: Vec<S>,
     op_name: &'static str,
 ) -> Result<String, GitError> {
@@ -100,7 +100,7 @@ fn run_git<S: AsRef<OsStr>>(
         .to_owned())
 }
 
-pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
+pub(crate) fn git_root_origin_url(path: &Utf8Path) -> Result<String, GitError> {
     let args = vec!["config", "--get", "remote.origin.url"];
 
     let url = run_git(path, args, "get git root origin url")?;
@@ -110,20 +110,20 @@ pub(crate) fn git_root_origin_url(path: &Path) -> Result<String, GitError> {
     Ok(url)
 }
 
-pub(crate) fn git_root_dir(path: &Path) -> Result<String, GitError> {
+pub(crate) fn git_root_dir(path: &Utf8Path) -> Result<String, GitError> {
     let args = vec!["rev-parse", "--show-toplevel"];
 
     run_git(path, args, "get git root dir")
 }
 
-pub(crate) fn rev_parse_tag(tag: &str, path: &Path) -> Result<String, GitError> {
+pub(crate) fn rev_parse_tag(tag: &str, path: &Utf8Path) -> Result<String, GitError> {
     let args = vec!["rev-parse", tag];
 
     run_git(path, args, "rev parse tag")
 }
 
 pub(crate) fn repo_clone(
-    current_dir: &Path,
+    current_dir: &Utf8Path,
     target_name: &str,
     repo_url: &str,
 ) -> Result<(), RepoError> {
@@ -188,7 +188,7 @@ pub(crate) fn repo_clone(
     Ok(())
 }
 
-pub(crate) fn checkout(repo_path: &Path, commit_sha: &str) -> Result<(), RepoError> {
+pub(crate) fn checkout(repo_path: &Utf8Path, commit_sha: &str) -> Result<(), RepoError> {
     if !repo_path.exists() {
         return Err(RepoError::NotCreated);
     }
@@ -227,11 +227,11 @@ pub(crate) fn checkout(repo_path: &Path, commit_sha: &str) -> Result<(), RepoErr
     Ok(())
 }
 
-pub(crate) fn checkout_path(repo_path: &Path, deploy_path: &RelativePath) -> Result<(), RepoError> {
+pub(crate) fn checkout_path(repo_path: &Utf8Path, deploy_path: &RelativePath) -> Result<(), RepoError> {
     checkout_paths(repo_path, vec![deploy_path])
 }
 
-pub(crate) fn checkout_paths(repo_path: &Path, paths: Vec<&RelativePath>) -> Result<(), RepoError> {
+pub(crate) fn checkout_paths(repo_path: &Utf8Path, paths: Vec<&RelativePath>) -> Result<(), RepoError> {
     if !repo_path.exists() {
         return Err(RepoError::NotCreated);
     }

@@ -1,12 +1,12 @@
+use camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::eyre::{Context, Report};
 use duct::{cmd, IntoExecutablePath};
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::io::{stdout, Read, Write};
-use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::str;
-use std::{collections::HashMap, io::BufReader, path::Path};
+use std::{collections::HashMap, io::BufReader};
 use tracing::{span, Level};
 
 use super::errors::{ProcessError, ProcessIOError};
@@ -30,12 +30,12 @@ pub(crate) fn process_complete_output<P, E, S>(
 ) -> Result<EntrypointOut, ProcessError>
 where
     // This is pretty bad...
-    P: Into<PathBuf> + Debug + Clone,
+    P: Into<Utf8PathBuf> + Debug + Clone,
     E: IntoExecutablePath + Debug + Clone,
     S: AsRef<OsStr> + Debug,
 {
     let output = cmd(program.clone(), &args)
-        .dir(working_dir.clone())
+        .dir(working_dir.clone().into())
         .stderr_to_stdout()
         .stdout_capture()
         .unchecked()
@@ -60,8 +60,8 @@ where
 /// the envs of the tidploy process. `input_bytes` is useful mostly for testing, if set to None then the
 /// child process will just inherit the stdin of the tidploy process.
 pub(crate) fn run_entrypoint(
-    working_dir: &Path,
-    entrypoint: &Path,
+    working_dir: &Utf8Path,
+    entrypoint: &Utf8Path,
     envs: HashMap<String, String>,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
@@ -73,7 +73,7 @@ pub(crate) fn run_entrypoint(
     let mut combined_envs: HashMap<_, _> = std::env::vars().collect();
     combined_envs.extend(envs);
 
-    let cmd_expr = cmd(entrypoint, Vec::<String>::new())
+    let cmd_expr = cmd(entrypoint.as_std_path(), Vec::<String>::new())
         .dir(working_dir)
         .full_env(&combined_envs)
         .stderr_to_stdout()
@@ -91,7 +91,7 @@ pub(crate) fn run_entrypoint(
     let entry_span = span!(
         Level::DEBUG,
         "entrypoint",
-        path = entrypoint.to_string_lossy().as_ref()
+        path = entrypoint.as_str()
     );
     let _enter = entry_span.enter();
 
