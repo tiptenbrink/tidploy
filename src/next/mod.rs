@@ -8,3 +8,4 @@ pub(crate) mod resolve;
 pub(crate) mod run;
 pub(crate) mod secrets;
 pub(crate) mod state;
+pub(crate) mod archives;
