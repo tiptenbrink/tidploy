@@ -1,8 +1,10 @@
 use camino::Utf8Path;
+use spinoff::{spinners, Spinner};
+use tracing::debug;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64USNP, Engine};
 
 use super::{
-    errors::{GitError, GitProcessError},
-    process::process_complete_output,
+    errors::{GitError, GitProcessError}, fs::{get_dirs, Dirs}, process::process_complete_output, state::parse_url_repo_name
 };
 use core::fmt::Debug;
 use std::ffi::OsStr;
@@ -36,16 +38,49 @@ pub(crate) fn git_root_dir(path: &Utf8Path) -> Result<String, GitError> {
     run_git(path, args, "get git root dir")
 }
 
-#[derive(Debug, PartialEq)]
-pub(crate) struct Repo {
-    pub(crate) name: String,
-    pub(crate) encoded_url: String,
-    pub(crate) url: String,
+pub(crate) fn repo_clone(
+    current_dir: &Utf8Path,
+    target_name: &str,
+    repo_url: &str,
+) -> Result<(), GitError> {
+    debug!(
+        "Cloning repository {} directory at target {}",
+        repo_url, target_name
+    );
+    let mut sp = Spinner::new(spinners::Line, "Cloning repository...", None);
+
+    let clone_args = vec!["clone", "--filter=tree:0", "--sparse", repo_url, target_name];
+    run_git(current_dir, clone_args, "partial clone sparse")?;
+    let target_dir = current_dir.join(target_name);
+    let checkout_args = vec!["sparse-checkout", "init", "--cone"];
+    run_git(&target_dir, checkout_args, "partial clone sparse")?;
+
+    sp.success("Repository cloned!");
+
+    Ok(())
 }
 
-impl Repo {
-    pub(crate) fn dir_name(&self) -> String {
-        format!("{}_{}", self.name, self.encoded_url)
-    }
+fn do_clone() {
+    let dirs = get_dirs();
+    let a = dirs.cache.as_path();
+    let b = dirs.tmp.as_path();
+
+    let url = "https://github.com/tiptenbrink/tidploy.git";
+    let encoded_url = B64USNP.encode(url);
+    let name = parse_url_repo_name(&url).unwrap();
+    let dir_name = format!("{}_{}", name, encoded_url);
+
+    let t = b;
+    repo_clone(t, &dir_name, url).unwrap();
 }
 
+
+// mod tests {
+
+//     use super::do_clone;
+
+//     #[test]
+//     fn test_do_clone() {
+//         do_clone();
+//     }
+// }

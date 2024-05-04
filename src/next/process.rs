@@ -88,11 +88,7 @@ pub(crate) fn run_entrypoint(
 
     let reader = cmd_expr.reader()?;
 
-    let entry_span = span!(
-        Level::DEBUG,
-        "entrypoint",
-        path = entrypoint.as_str()
-    );
+    let entry_span = span!(Level::DEBUG, "entrypoint", path = entrypoint.as_str());
     let _enter = entry_span.enter();
 
     let mut out: String = String::with_capacity(128);

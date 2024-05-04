@@ -1,16 +1,15 @@
-use std::{
-    env,
-};
+use std::{env, fmt::Debug};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use relative_path::{RelativePath, RelativePathBuf};
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 use crate::filesystem::WrapToPath;
 
 use super::{
     config::{merge_vars, traverse_configs, ArgumentConfig, ConfigScope, ConfigVar},
-    errors::ResolutionError, state::ResolveState,
+    errors::ResolutionError,
+    state::ResolveState,
 };
 
 #[derive(Default)]
@@ -28,7 +27,7 @@ impl SecretScopeArguments {
             service: other.service.or(self.service),
             sub: other.sub.or(self.sub),
             name: other.name.or(self.name),
-            require_hash: other.require_hash.or(self.require_hash)
+            require_hash: other.require_hash.or(self.require_hash),
         }
     }
 }
@@ -39,7 +38,7 @@ impl From<ConfigScope> for SecretScopeArguments {
             service: value.service,
             name: value.name,
             sub: value.sub,
-            require_hash: value.require_hash
+            require_hash: value.require_hash,
         }
     }
 }
@@ -80,6 +79,7 @@ pub(crate) struct SecretArguments {
     pub(crate) scope_args: SecretScopeArguments,
 }
 
+#[derive(Debug)]
 pub(crate) struct SecretScope {
     pub(crate) service: String,
     pub(crate) name: String,
@@ -87,6 +87,7 @@ pub(crate) struct SecretScope {
     pub(crate) hash: String,
 }
 
+#[derive(Debug)]
 pub(crate) struct RunResolved {
     pub(crate) executable: Utf8PathBuf,
     pub(crate) execution_path: Utf8PathBuf,
@@ -94,6 +95,7 @@ pub(crate) struct RunResolved {
     pub(crate) scope: SecretScope,
 }
 
+#[derive(Debug)]
 pub(crate) struct SecretResolved {
     pub(crate) key: String,
     pub(crate) scope: SecretScope,
@@ -142,8 +144,7 @@ fn env_run_args() -> RunArguments {
     run_arguments
 }
 
-pub(crate) trait Resolve<Resolved>: Sized
-{
+pub(crate) trait Resolve<Resolved>: Sized {
     fn merge_env_config(
         self,
         state_root: &Utf8Path,
@@ -163,7 +164,11 @@ fn resolve_scope(
         service: scope_args.service.unwrap_or("tidploy".to_owned()),
         name: scope_args.name.unwrap_or(name.to_owned()),
         sub: scope_args.sub.unwrap_or(sub.to_owned()),
-        hash: if scope_args.require_hash.unwrap_or(false) { hash.to_owned() } else { "tidploy_default_hash".to_owned() },
+        hash: if scope_args.require_hash.unwrap_or(false) {
+            hash.to_owned()
+        } else {
+            "tidploy_default_hash".to_owned()
+        },
     }
 }
 
@@ -179,10 +184,7 @@ impl Resolve<RunResolved> for RunArguments {
 
         let merged_args = run_args_env.merge(self);
 
-        let config_run = config
-            .argument
-            .map(RunArguments::from)
-            .unwrap_or_default();
+        let config_run = config.argument.map(RunArguments::from).unwrap_or_default();
 
         Ok(config_run.merge(merged_args))
     }
@@ -227,7 +229,13 @@ impl Resolve<SecretResolved> for SecretArguments {
         Ok(merged_args)
     }
 
-    fn resolve(self, _resolve_root: &Utf8Path, name: &str, sub: &str, hash: &str) -> SecretResolved {
+    fn resolve(
+        self,
+        _resolve_root: &Utf8Path,
+        name: &str,
+        sub: &str,
+        hash: &str,
+    ) -> SecretResolved {
         let scope = resolve_scope(self.scope_args, name, sub, hash);
 
         SecretResolved {
@@ -239,8 +247,13 @@ impl Resolve<SecretResolved> for SecretArguments {
 
 /// Loads config, environment variables and resolves the final arguments to make them ready for final use
 #[instrument(name = "merge_resolve", level = "debug", skip_all)]
-pub(crate) fn merge_and_resolve<T>(unresolved_args: impl Resolve<T>, state: ResolveState) -> Result<T, ResolutionError> {
+pub(crate) fn merge_and_resolve<T: Debug>(
+    unresolved_args: impl Resolve<T>,
+    state: ResolveState,
+) -> Result<T, ResolutionError> {
     let merged_args = unresolved_args.merge_env_config(&state.state_root, &state.state_path)?;
 
-    Ok(merged_args.resolve(&state.resolve_root, &state.name, &state.sub, &state.hash))
+    let resolved = merged_args.resolve(&state.resolve_root, &state.name, &state.sub, &state.hash);
+    debug!("Resolved as {:?}", resolved);
+    Ok(resolved)
 }

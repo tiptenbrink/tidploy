@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    fs,
-    ops::ControlFlow,
-};
+use std::{collections::HashMap, fs, ops::ControlFlow};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use relative_path::{RelativePath, RelativePathBuf};
@@ -24,7 +20,7 @@ pub(crate) struct ConfigScope {
     pub(crate) name: Option<String>,
     pub(crate) sub: Option<String>,
     pub(crate) service: Option<String>,
-    pub(crate) require_hash: Option<bool>
+    pub(crate) require_hash: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -38,8 +34,17 @@ pub(crate) struct ArgumentConfig {
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
 pub(crate) enum ConfigAddress {
-    Local { path: String },
-    Git { url: String, git_ref: String }
+    Local {
+        path: String,
+        state_path: Option<String>,
+        state_root: Option<String>,
+    },
+    Git {
+        url: String,
+        git_ref: String,
+        state_path: Option<String>,
+        state_root: Option<String>,
+    },
 }
 
 #[derive(Deserialize, Debug)]
@@ -52,7 +57,7 @@ pub(crate) struct StateConfig {
 #[derive(Deserialize, Debug, Default)]
 pub(crate) struct Config {
     pub(crate) argument: Option<ArgumentConfig>,
-    pub(crate) state: Option<StateConfig>
+    pub(crate) state: Option<StateConfig>,
 }
 
 pub(crate) fn load_dploy_config(config_dir_path: &Utf8Path) -> Result<Config, ConfigError> {
@@ -112,7 +117,7 @@ fn overwrite_scope(original: ConfigScope, replacing: ConfigScope) -> ConfigScope
         name: overwrite_option(original.name, replacing.name),
         sub: overwrite_option(original.sub, replacing.sub),
         service: overwrite_option(original.service, replacing.service),
-        require_hash: overwrite_option(original.require_hash, replacing.require_hash)
+        require_hash: overwrite_option(original.require_hash, replacing.require_hash),
     }
 }
 
@@ -161,7 +166,7 @@ fn overwrite_state_config(base: StateConfig, replacing: StateConfig) -> StateCon
     StateConfig {
         state_path: replacing.state_path.or(base.state_path),
         state_root: replacing.state_root.or(base.state_root),
-        address: replacing.address.or(base.address)
+        address: replacing.address.or(base.address),
     }
 }
 
@@ -172,10 +177,30 @@ fn overwrite_config(root_config: Config, overwrite_config: Config) -> Config {
             overwrite_config.argument,
             &overwrite_arguments,
         ),
-        state: merge_option(root_config.state, overwrite_config.state, &overwrite_state_config)
+        state: merge_option(
+            root_config.state,
+            overwrite_config.state,
+            &overwrite_state_config,
+        ),
     }
 }
 
+/// The relative path is normalized, so if it contains symlinks unexpected behavior might happen. 
+/// This is designed to work only for simple descent down a directory.
+fn get_component_paths(start_path: &Utf8Path, final_path: &RelativePath) -> Vec<Utf8PathBuf> {
+    let paths: Vec<Utf8PathBuf> = final_path.normalize()
+        .components()
+        .scan(RelativePathBuf::new(), |state, component| {
+            state.push(component);
+            Some(state.to_utf8_path(start_path))
+        })
+        .collect();
+
+    paths
+}
+
+/// Be sure the relative path is just a simple ./child/child/child2 ...etc relative path (the leading 
+/// ./ is optional)
 pub(crate) fn traverse_configs(
     start_path: &Utf8Path,
     final_path: &RelativePath,
@@ -187,13 +212,7 @@ pub(crate) fn traverse_configs(
 
     let root_config = load_dploy_config(start_path)?;
 
-    let paths: Vec<Utf8PathBuf> = final_path
-        .components()
-        .scan(RelativePathBuf::new(), |state, component| {
-            state.push(component);
-            Some(state.to_utf8_path(start_path))
-        })
-        .collect();
+    let paths = get_component_paths(start_path, final_path);
 
     let combined_config = paths.iter().try_fold(root_config, |state, path| {
         let inner_config = load_dploy_config(path);
@@ -207,5 +226,31 @@ pub(crate) fn traverse_configs(
     match combined_config {
         ControlFlow::Break(e) => Err(e),
         ControlFlow::Continue(config) => Ok(config),
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    use camino::Utf8PathBuf;
+    use relative_path::RelativePathBuf;
+
+    use super::get_component_paths;
+
+    #[test]
+    fn paths_simple() {
+        let path = Utf8PathBuf::from_path_buf(env::current_dir().unwrap()).unwrap();
+        let relative1 = RelativePathBuf::from("./this/that");
+        let relative2 = RelativePathBuf::from("this/that");
+
+        let paths1 = get_component_paths(&path, &relative1);
+        let paths2 = get_component_paths(&path, &relative2);
+        let comp2 = path.join("this").join("that");
+        let comp1 = path.join("this");
+
+        assert_eq!(vec![comp1.clone(), comp2.clone()], paths1);
+        assert_eq!(vec![comp1, comp2], paths2);
     }
 }

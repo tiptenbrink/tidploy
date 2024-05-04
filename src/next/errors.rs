@@ -3,7 +3,7 @@ use std::io::Error as IOError;
 use thiserror::Error as ThisError;
 use tracing_error::TracedError;
 
-use super::state::Address;
+// use crate::filesystem::RelativePathError;
 
 #[derive(ThisError, Debug)]
 pub(crate) enum SecretError {
@@ -45,7 +45,9 @@ pub(crate) enum StateErrorKind {
     #[error("{0}")]
     Config(#[from] ConfigError),
     #[error("{0}")]
-    Address(#[from] AddressError)
+    Address(#[from] AddressError),
+    // #[error("{0}")]
+    // RelativePath(#[from] RelativePathError)
 }
 
 pub trait WrapStateErr<T, E> {

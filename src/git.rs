@@ -227,11 +227,17 @@ pub(crate) fn checkout(repo_path: &Utf8Path, commit_sha: &str) -> Result<(), Rep
     Ok(())
 }
 
-pub(crate) fn checkout_path(repo_path: &Utf8Path, deploy_path: &RelativePath) -> Result<(), RepoError> {
+pub(crate) fn checkout_path(
+    repo_path: &Utf8Path,
+    deploy_path: &RelativePath,
+) -> Result<(), RepoError> {
     checkout_paths(repo_path, vec![deploy_path])
 }
 
-pub(crate) fn checkout_paths(repo_path: &Utf8Path, paths: Vec<&RelativePath>) -> Result<(), RepoError> {
+pub(crate) fn checkout_paths(
+    repo_path: &Utf8Path,
+    paths: Vec<&RelativePath>,
+) -> Result<(), RepoError> {
     if !repo_path.exists() {
         return Err(RepoError::NotCreated);
     }

@@ -3,7 +3,8 @@ use keyring::Entry;
 use test_log::test;
 
 use tidploy::{
-    run_command, secret_command, CommandError, GlobalArguments, RunArguments, SecretArguments,
+    archive_command, run_command, secret_command, ArchiveArguments, CommandError, GlobalArguments,
+    RunArguments, SecretArguments,
 };
 
 #[test]
@@ -139,3 +140,28 @@ fn test_secret_get() -> Result<(), CommandError> {
 
     Ok(())
 }
+
+#[test]
+fn test_config_address() -> Result<(), CommandError> {
+    let mut global_args = GlobalArguments::default();
+    let mut args = RunArguments::default();
+    //global_args.context = Some(StateContext::None);
+    global_args.resolve_root = Some("examples/config/start".to_owned());
+
+    let output = run_command(global_args, args)?;
+    assert!(output.exit.success());
+
+    assert_eq!("I'm there!\n", output.out);
+
+    Ok(())
+}
+
+// #[test]
+// fn test_archive() -> Result<(), CommandError> {
+//     let global_args = GlobalArguments::default();
+//     let mut args = ArchiveArguments::default();
+
+//     archive_command(global_args, args)?;
+
+//     Ok(())
+// }

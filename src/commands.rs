@@ -112,11 +112,15 @@ enum ErrorRepr {
 }
 
 fn create_repo(repo: Repo) -> Result<Utf8PathBuf, RepoError> {
-    
-    let cache_dir = get_dirs().map_err(|e| RepoError::File(FileError {
-        msg: "Error getting dirs!".to_owned(),
-        source: e
-    }))?.cache.clone();
+    let cache_dir = get_dirs()
+        .map_err(|e| {
+            RepoError::File(FileError {
+                msg: "Error getting dirs!".to_owned(),
+                source: e,
+            })
+        })?
+        .cache
+        .clone();
     let repo_name = repo.dir_name();
     let repo_path = cache_dir.join(&repo_name);
 
@@ -158,10 +162,15 @@ fn switch_to_revision(
 }
 
 fn prepare_from_state(state: &State, repo_path: &Utf8Path) -> Result<(), ErrorRepr> {
-    let cache_dir = get_dirs().map_err(|e| ErrorRepr::Repo(RepoError::File(FileError {
-        msg: "Cache dir not UTF-8!".to_owned(),
-        source: e
-    })))?.cache.clone();
+    let cache_dir = get_dirs()
+        .map_err(|e| {
+            ErrorRepr::Repo(RepoError::File(FileError {
+                msg: "Cache dir not UTF-8!".to_owned(),
+                source: e,
+            }))
+        })?
+        .cache
+        .clone();
     let archives = cache_dir.join("archives");
     let deploy_encoded = B64USNP.encode(state.deploy_path.as_str());
     let archive_name = format!(
@@ -219,10 +228,15 @@ fn prepare_command(
     let _prep_enter = prepare_san.enter();
 
     let repo_path = if no_create {
-        let cache_dir = get_dirs().map_err(|e| ErrorRepr::Repo(RepoError::File(FileError {
-            msg: "Cache dir not UTF-8!".to_owned(),
-            source: e
-        })))?.cache.clone();
+        let cache_dir = get_dirs()
+            .map_err(|e| {
+                ErrorRepr::Repo(RepoError::File(FileError {
+                    msg: "Cache dir not UTF-8!".to_owned(),
+                    source: e,
+                }))
+            })?
+            .cache
+            .clone();
         let repo_path = cache_dir.join(repo.dir_name());
 
         if !repo_path.exists() {
@@ -297,10 +311,12 @@ pub fn run_cli() -> Result<ExitCode, Report> {
             enter_dl.exit();
 
             let state = prepare_command(cli_state.clone(), no_create, state.repo)?.unwrap();
-            let dirs = get_dirs().map_err(|e| ErrorRepr::Repo(RepoError::File(FileError {
-                msg: "Cache dir not UTF-8!".to_owned(),
-                source: e
-            })))?;
+            let dirs = get_dirs().map_err(|e| {
+                ErrorRepr::Repo(RepoError::File(FileError {
+                    msg: "Cache dir not UTF-8!".to_owned(),
+                    source: e,
+                }))
+            })?;
             let cache_dir = dirs.cache.as_path();
             let tmp_dir = dirs.tmp.as_path();
             let deploy_encoded = B64USNP.encode(state.deploy_path.as_str());

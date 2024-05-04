@@ -6,9 +6,9 @@ use rpassword::prompt_password;
 use tracing::{debug, instrument};
 
 use crate::next::{
-        resolve::{merge_and_resolve, SecretArguments, SecretScopeArguments},
-        state::create_resolve_state,
-    };
+    resolve::{merge_and_resolve, SecretArguments, SecretScopeArguments},
+    state::create_resolve_state,
+};
 
 use super::{
     config::ConfigVar,
@@ -46,8 +46,12 @@ fn set_keyring_secret(secret: &str, key: &str, service: &str) -> Result<(), Keyr
 }
 
 fn key_from_scope(scope: &SecretScope, key: &str, require_hash_match: bool) -> String {
-    let hash = if require_hash_match { &scope.hash } else { "tidploy_default_hash" };
-    
+    let hash = if require_hash_match {
+        &scope.hash
+    } else {
+        "tidploy_default_hash"
+    };
+
     format!("{}::{}::{}:{}", scope.name, scope.sub, hash, key)
 }
 
@@ -88,9 +92,11 @@ fn secret_prompt(
 
     let store_key_default_hash = key_from_scope(scope, key, false);
 
-    set_keyring_secret(&password, &store_key_default_hash, &scope.service).map_err(|e| SecretKeyringError {
-        msg: format!("Failed to set key {}", &store_key),
-        source: e,
+    set_keyring_secret(&password, &store_key_default_hash, &scope.service).map_err(|e| {
+        SecretKeyringError {
+            msg: format!("Failed to set key {}", &store_key),
+            source: e,
+        }
     })?;
 
     Ok(store_key)
@@ -111,10 +117,7 @@ pub(crate) fn secret_command(
         service,
         ..Default::default()
     };
-    let secret_args = SecretArguments {
-        key,
-        scope_args,
-    };
+    let secret_args = SecretArguments { key, scope_args };
     let resolve_state = create_resolve_state(state_in)?;
 
     let secret_resolved = merge_and_resolve(secret_args, resolve_state)?;

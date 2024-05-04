@@ -28,15 +28,20 @@ pub struct NextSub {
     // /// The path inside the repository that should be used as the primary config source.
     // #[arg(short, long, global = true)]
     // deploy_pth: Option<String>,
-
     /// By default, tidploy searches for the root directory of the Git repository that the command is called
     /// from and takes all other inputs as relative to there. To instead ignore the current Git repository
     /// and simply take the current working directory as the root, enable this flag.
     #[arg(short = 'c', long = "cwd")]
     cwd_context: bool,
 
-    /// Location relative to context root where you want to begin reading configs. Defaults to be equal 
-    /// to context root.
+
+    /// Directory to start resolving from. Can either be an absolute path (this requires --cwd), or relative to 
+    /// the current directory or Git root dir
+    #[arg(long = "resolve-root")]
+    resolve_root: Option<String>,
+
+    /// Location relative to resolve root where you want to begin reading configs. Defaults to be equal
+    /// to resolve root.
     #[arg(long = "state-root")]
     state_root: Option<String>,
 
@@ -71,10 +76,11 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
         subcommand,
         cwd_context,
         state_path,
-        state_root
+        state_root,
+        resolve_root
     } = next_sub;
 
-    let state_in = StateIn::from_args(cwd_context, state_path, state_root);
+    let state_in = StateIn::from_args(cwd_context, resolve_root, state_path, state_root);
 
     match subcommand {
         crate::next::commands::NextCommands::Secret { key } => {
@@ -85,7 +91,7 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
         crate::next::commands::NextCommands::Run {
             executable,
             variables,
-            execution_path
+            execution_path,
         } => {
             let out = run_command(state_in, None, executable, execution_path, variables)?;
             // If [process::ExitCode::from_raw] gets stabilized this can be simplified

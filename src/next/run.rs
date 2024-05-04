@@ -26,7 +26,14 @@ pub(crate) fn run_command(
     execution_path: Option<String>,
     variables: Vec<String>,
 ) -> Result<EntrypointOut, Report> {
-    run_command_input(state_in, service, executable, execution_path, variables, None)
+    run_command_input(
+        state_in,
+        service,
+        executable,
+        execution_path,
+        variables,
+        None,
+    )
 }
 
 #[instrument(name = "run", level = "debug", skip_all)]
