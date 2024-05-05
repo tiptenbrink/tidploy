@@ -40,7 +40,7 @@ pub(crate) fn run_entrypoint<P: AsRef<Utf8Path>>(
     let entrypoint_dir = entrypoint_dir.as_ref();
     let program_path = entrypoint_dir.join(entrypoint);
     let mut entrypoint_output = Cmd::new(&program_path)
-        .current_dir(&entrypoint_dir)
+        .current_dir(entrypoint_dir)
         .envs(&envs)
         .stdout(Stdio::piped())
         .spawn()

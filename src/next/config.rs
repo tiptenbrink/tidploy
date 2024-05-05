@@ -5,7 +5,7 @@ use relative_path::{RelativePath, RelativePathBuf};
 use serde::Deserialize;
 use tracing::debug;
 
-use crate::{filesystem::WrapToPath, next::errors::WrapConfigErr, state::State};
+use crate::{filesystem::WrapToPath, next::errors::WrapConfigErr};
 
 use super::errors::ConfigError;
 
@@ -186,10 +186,11 @@ fn overwrite_config(root_config: Config, overwrite_config: Config) -> Config {
     }
 }
 
-/// The relative path is normalized, so if it contains symlinks unexpected behavior might happen. 
+/// The relative path is normalized, so if it contains symlinks unexpected behavior might happen.
 /// This is designed to work only for simple descent down a directory.
 fn get_component_paths(start_path: &Utf8Path, final_path: &RelativePath) -> Vec<Utf8PathBuf> {
-    let paths: Vec<Utf8PathBuf> = final_path.normalize()
+    let paths: Vec<Utf8PathBuf> = final_path
+        .normalize()
         .components()
         .scan(RelativePathBuf::new(), |state, component| {
             state.push(component);
@@ -200,7 +201,7 @@ fn get_component_paths(start_path: &Utf8Path, final_path: &RelativePath) -> Vec<
     paths
 }
 
-/// Be sure the relative path is just a simple ./child/child/child2 ...etc relative path (the leading 
+/// Be sure the relative path is just a simple ./child/child/child2 ...etc relative path (the leading
 /// ./ is optional)
 pub(crate) fn traverse_configs(
     start_path: &Utf8Path,
@@ -229,7 +230,6 @@ pub(crate) fn traverse_configs(
         ControlFlow::Continue(config) => Ok(config),
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -266,7 +266,7 @@ fn set_state(
         state.commit_sha = rev_parse_tag("HEAD", &state.root_dir)?;
     } else {
         debug!("Setting commit sha to tag.");
-        state.commit_sha = tag.clone();
+        state.commit_sha.clone_from(&tag);
     }
 
     if tag != TIDPLOY_DEFAULT {
@@ -289,7 +289,7 @@ fn set_state(
         }
 
         if state.exe_name == TIDPLOY_DEFAULT {
-            state.exe_name = "entrypoint.sh".to_owned();
+            "entrypoint.sh".clone_into(&mut state.exe_name);
         }
     }
 

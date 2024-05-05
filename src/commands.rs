@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use crate::archives::{extract_archive, make_archive};
 use crate::errors::{ProcessError, RepoError};
-use crate::filesystem::{get_dirs, FileError, FileErrorKind};
+use crate::filesystem::{get_dirs, FileError};
 use crate::git::{checkout, checkout_path, repo_clone, Repo};
 use crate::next::commands::{match_command, NextSub};
 use crate::next::run::run_command_input_old_state;

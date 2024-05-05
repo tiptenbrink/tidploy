@@ -3,8 +3,7 @@ use keyring::Entry;
 use test_log::test;
 
 use tidploy::{
-    archive_command, run_command, secret_command, ArchiveArguments, CommandError, GlobalArguments,
-    RunArguments, SecretArguments,
+    run_command, secret_command, CommandError, GlobalArguments, RunArguments, SecretArguments,
 };
 
 #[test]
@@ -144,7 +143,7 @@ fn test_secret_get() -> Result<(), CommandError> {
 #[test]
 fn test_config_address() -> Result<(), CommandError> {
     let mut global_args = GlobalArguments::default();
-    let mut args = RunArguments::default();
+    let args = RunArguments::default();
     //global_args.context = Some(StateContext::None);
     global_args.resolve_root = Some("examples/config/start".to_owned());
 
@@ -159,7 +158,7 @@ fn test_config_address() -> Result<(), CommandError> {
 #[test]
 fn test_git_download() -> Result<(), CommandError> {
     let mut global_args = GlobalArguments::default();
-    let mut args = RunArguments::default();
+    let args = RunArguments::default();
     //global_args.context = Some(StateContext::None);
     global_args.resolve_root = Some("examples/download/source".to_owned());
     global_args.store_dir = Some(Utf8PathBuf::from("/tmp/tidploy"));

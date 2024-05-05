@@ -1,10 +1,10 @@
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8PathBuf;
 use directories::ProjectDirs;
-use std::{env, fs::create_dir, sync::OnceLock};
-
+use std::{env, sync::OnceLock};
 
 pub(crate) struct Dirs {
     pub(crate) cache: Utf8PathBuf,
+    #[allow(dead_code)]
     pub(crate) tmp: Utf8PathBuf,
 }
 

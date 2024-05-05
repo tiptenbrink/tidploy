@@ -44,15 +44,15 @@ pub(crate) fn get_dirs() -> Result<&'static Dirs, FileErrorKind> {
     })
 }
 
-#[derive(Debug, ThisError)]
-pub(crate) enum RelativePathError {
-    #[error("The full path {0} is not a child of the root (did you use too many ..?")]
-    Child(String),
-    #[error(
-        "An error occurred when canonicalizing the full path. Does it exist and is it UTF-8? {0}"
-    )]
-    Canonicalize(#[from] std::io::Error),
-}
+// #[derive(Debug, ThisError)]
+// pub(crate) enum RelativePathError {
+//     #[error("The full path {0} is not a child of the root (did you use too many ..?")]
+//     Child(String),
+//     #[error(
+//         "An error occurred when canonicalizing the full path. Does it exist and is it UTF-8? {0}"
+//     )]
+//     Canonicalize(#[from] std::io::Error),
+// }
 
 pub trait WrapToPath {
     fn to_utf8_path<P: AsRef<Utf8Path>>(&self, path: P) -> Utf8PathBuf;
@@ -71,7 +71,6 @@ impl WrapToPath for RelativePath {
     // fn to_path_canon_checked(&self, root: &Utf8Path) -> Result<Utf8PathBuf, RelativePathError> {
     //     let full = self.to_utf8_path(root);
 
-    
     //     if !full_canon.starts_with(root) {
     //         Err(RelativePathError::Child(full_canon.to_string()))
     //     } else {
@@ -91,7 +90,7 @@ impl WrapToPath for RelativePathBuf {
     // fn to_path_canon_checked(&self, root: &Utf8Path) -> Result<Utf8PathBuf, RelativePathError> {
     //     let full = self.to_utf8_path(root);
     //     let full_canon = full.canonicalize_utf8()?;
-    
+
     //     if !full_canon.starts_with(root) {
     //         Err(RelativePathError::Child(full_canon.to_string()))
     //     } else {

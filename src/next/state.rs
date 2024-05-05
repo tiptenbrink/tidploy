@@ -1,13 +1,16 @@
-use std::env::{self, current_dir};
+use std::env::current_dir;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use relative_path::{RelativePath, RelativePathBuf};
+use relative_path::RelativePathBuf;
 use tracing::{debug, instrument};
 
 use crate::filesystem::WrapToPath;
 
 use super::{
-    config::{traverse_configs, ConfigAddress, ConfigVar, StateConfig}, errors::{AddressError, StateError, StateErrorKind, WrapStateErr}, fs::get_dirs, git::{get_dir_from_git, git_root_dir}
+    config::{traverse_configs, ConfigAddress, ConfigVar, StateConfig},
+    errors::{AddressError, StateError, StateErrorKind, WrapStateErr},
+    fs::get_dirs,
+    git::{get_dir_from_git, git_root_dir},
 };
 
 #[derive(Debug)]
@@ -69,19 +72,14 @@ impl StatePaths {
             msg: "Current directory is not valid UTF-8!".to_owned(),
             source: StateErrorKind::InvalidPath.into(),
         })?;
-        let resolve_root_path = state_in
-            .resolve_root
-            .map(|s| Utf8PathBuf::from(s));
+        let resolve_root_path = state_in.resolve_root.map(Utf8PathBuf::from);
         let resolve_root = resolve_root_path.unwrap_or_default();
         let resolve_root_rel = RelativePathBuf::from_path(&resolve_root).ok();
-        
-        
+
         let resolve_root = match state_in.context {
-            InferContext::Cwd => {
-                match resolve_root_rel {
-                    Some(resolve_root_rel) => resolve_root_rel.to_utf8_path(&current_dir),
-                    None => resolve_root
-                }
+            InferContext::Cwd => match resolve_root_rel {
+                Some(resolve_root_rel) => resolve_root_rel.to_utf8_path(&current_dir),
+                None => resolve_root,
             },
             InferContext::Git => {
                 let git_dir = Utf8PathBuf::from(
@@ -90,12 +88,11 @@ impl StatePaths {
                 );
                 match resolve_root_rel {
                     Some(resolve_root_rel) => resolve_root_rel.to_utf8_path(&git_dir),
-                    None => git_dir
+                    None => git_dir,
                 }
-
-            },
+            }
         };
-        
+
         // let resolve_root_path = state_in
         //     .resolve_root
         //     .map(|s| Utf8PathBuf::from(s))
@@ -109,11 +106,11 @@ impl StatePaths {
         //     .to_state_err(format!("Error interpreting resolve_root {} as relative to the context_root {}", &resolve_root_rel, &context_root))?;
         let state_root = state_in
             .state_root
-            .map(|s| RelativePathBuf::from(s))
+            .map(RelativePathBuf::from)
             .unwrap_or_default();
         let state_path = state_in
             .state_path
-            .map(|s| RelativePathBuf::from(s))
+            .map(RelativePathBuf::from)
             .unwrap_or_default();
 
         Ok(StatePaths {
@@ -154,7 +151,7 @@ pub(crate) enum AddressRoot {
 impl Address {
     fn from_config_addr(value: ConfigAddress, resolve_root: &Utf8Path) -> Self {
         debug!("Converting config_adress {:?} to address!", value);
-        
+
         match value {
             ConfigAddress::Git {
                 url,
@@ -163,7 +160,11 @@ impl Address {
                 state_path,
                 state_root,
             } => Address {
-                root: AddressRoot::Git(GitAddress { url, git_ref, path: RelativePathBuf::from(target_path.unwrap_or_default()) }),
+                root: AddressRoot::Git(GitAddress {
+                    url,
+                    git_ref,
+                    path: RelativePathBuf::from(target_path.unwrap_or_default()),
+                }),
                 state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
                 state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
             },
@@ -185,7 +186,7 @@ impl Address {
                     state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
                     state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
                 }
-            },
+            }
         }
     }
 }
@@ -194,7 +195,7 @@ impl Address {
 pub(crate) struct GitAddress {
     pub(crate) url: String,
     pub(crate) git_ref: String,
-    pub(crate) path: RelativePathBuf
+    pub(crate) path: RelativePathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -227,7 +228,10 @@ impl State {
     // }
 
     fn merge_config(&self, other: StateConfig) -> Self {
-        let address = other.address.map(|a| Address::from_config_addr(a, &self.resolve_root)).or(self.address.clone());
+        let address = other
+            .address
+            .map(|a| Address::from_config_addr(a, &self.resolve_root))
+            .or(self.address.clone());
 
         Self {
             state_path: other
@@ -246,8 +250,8 @@ impl State {
     /// Checks if a state is different to another one for the purposes of converging to a state.
     fn same(&self, other: &Self) -> bool {
         self.resolve_root == other.resolve_root
-        && self.state_path.normalize() == other.state_path.normalize()
-        && self.state_root.normalize() == other.state_root.normalize()
+            && self.state_path.normalize() == other.state_path.normalize()
+            && self.state_root.normalize() == other.state_root.normalize()
     }
 }
 
@@ -270,7 +274,7 @@ fn converge_state(state: &State) -> Result<State, StateError> {
         let config = traverse_configs(&state_root_path, &state.state_path)
             .to_state_err("Failed to read configs for determining new state.".to_owned())?;
         let new_state = if let Some(config_state) = config.state {
-            (&state).merge_config(config_state)
+            state.merge_config(config_state)
         } else {
             break i + 1;
         };
@@ -283,7 +287,6 @@ fn converge_state(state: &State) -> Result<State, StateError> {
         }
 
         i += 1;
-        
     };
     debug!("Converged to state {:?} in {} iterations.", &state, iter);
 
@@ -293,7 +296,7 @@ fn converge_state(state: &State) -> Result<State, StateError> {
 /// Parse a repo URL to extract a "name" from it, as well as encode the part before the name to still uniquely
 /// identify it. Only supports forward slashes as path seperator.
 pub(crate) fn parse_url_repo_name(url: &str) -> Result<String, AddressError> {
-    let url = url.strip_suffix('/').unwrap_or(&url).to_owned();
+    let url = url.strip_suffix('/').unwrap_or(url).to_owned();
     // We want the final part, after the slash, as the "file name"
     let split_parts: Vec<&str> = url.split('/').collect();
 
@@ -326,9 +329,7 @@ fn resolve_address(address: Address, store_dir: &Utf8Path) -> Result<State, Stat
     } = address;
 
     match root {
-        AddressRoot::Git(addr) => {
-            get_dir_from_git(addr, &state_path, &state_root, store_dir)
-        }
+        AddressRoot::Git(addr) => get_dir_from_git(addr, &state_path, &state_root, store_dir),
         AddressRoot::Local(path) => Ok(State {
             resolve_root: path,
             state_path,
@@ -340,25 +341,29 @@ fn resolve_address(address: Address, store_dir: &Utf8Path) -> Result<State, Stat
 
 // fn set_current_dir(resolve_root: &Utf8Path) -> Result<(), StateError> {
 //     debug!("Setting current dir to resolve root {}", resolve_root);
-    
+
 //     env::set_current_dir(resolve_root).to_state_err(format!("Failed to set current dir to context root {}", resolve_root))?;
 
 //     Ok(())
 // }
 
-
 pub(crate) struct StateOptions {
-    pub(crate) store_dir: Utf8PathBuf
+    pub(crate) store_dir: Utf8PathBuf,
 }
 
 impl Default for StateOptions {
     fn default() -> Self {
-        Self { store_dir: get_dirs().cache.clone() }
+        Self {
+            store_dir: get_dirs().cache.clone(),
+        }
     }
 }
 
 #[instrument(name = "state", level = "debug", skip_all)]
-pub(crate) fn create_resolve_state(state_in: StateIn, opt: StateOptions) -> Result<ResolveState, StateError> {
+pub(crate) fn create_resolve_state(
+    state_in: StateIn,
+    opt: StateOptions,
+) -> Result<ResolveState, StateError> {
     let paths = StatePaths::new(state_in)?;
 
     let mut state = converge_state(&paths.into())?;

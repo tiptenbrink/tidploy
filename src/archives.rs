@@ -1,5 +1,4 @@
 use crate::errors::{RepoError, TarError};
-use crate::filesystem::{FileError, FileErrorKind};
 use crate::process::process_out;
 use camino::{Utf8Path, Utf8PathBuf};
 use std::fs;

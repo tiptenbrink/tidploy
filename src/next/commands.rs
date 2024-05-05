@@ -34,8 +34,7 @@ pub struct NextSub {
     #[arg(short = 'c', long = "cwd")]
     cwd_context: bool,
 
-
-    /// Directory to start resolving from. Can either be an absolute path (this requires --cwd), or relative to 
+    /// Directory to start resolving from. Can either be an absolute path (this requires --cwd), or relative to
     /// the current directory or Git root dir
     #[arg(long = "resolve-root")]
     resolve_root: Option<String>,
@@ -77,7 +76,7 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
         cwd_context,
         state_path,
         state_root,
-        resolve_root
+        resolve_root,
     } = next_sub;
 
     let state_in = StateIn::from_args(cwd_context, resolve_root, state_path, state_root);

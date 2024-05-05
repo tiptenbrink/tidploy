@@ -1,4 +1,3 @@
-use super::archives::archive_command as inner_archive_command;
 use super::run::run_command_input as inner_run_command;
 use super::secrets::secret_command as inner_secret_command;
 use super::state::{StateIn, StateOptions};
@@ -30,16 +29,20 @@ pub struct GlobalArguments {
     pub cwd_context: bool,
     pub resolve_root: Option<String>,
     pub state_root: Option<String>,
-    pub state_path: Option<String>, 
-    pub store_dir: Option<Utf8PathBuf>
-    // pub repo_url: Option<String>,
-                                    // pub deploy_path: Option<String>,
-                                    // pub tag: Option<String>,
+    pub state_path: Option<String>,
+    pub store_dir: Option<Utf8PathBuf>, // pub repo_url: Option<String>,
+                                        // pub deploy_path: Option<String>,
+                                        // pub tag: Option<String>,
 }
 
 impl From<GlobalArguments> for StateIn {
     fn from(value: GlobalArguments) -> Self {
-        Self::from_args(value.cwd_context, value.resolve_root, value.state_path, value.state_root)
+        Self::from_args(
+            value.cwd_context,
+            value.resolve_root,
+            value.state_path,
+            value.state_root,
+        )
     }
 }
 
@@ -48,7 +51,7 @@ impl From<GlobalArguments> for StateOptions {
         let default = Self::default();
 
         Self {
-            store_dir: value.store_dir.unwrap_or(default.store_dir)
+            store_dir: value.store_dir.unwrap_or(default.store_dir),
         }
     }
 }
@@ -105,23 +108,14 @@ pub fn secret_command(
     global_args: GlobalArguments,
     args: SecretArguments,
 ) -> Result<String, CommandError> {
-    inner_secret_command(global_args.clone().into(), Some(global_args.into()), args.service, args.key, args.prompt).map_err(|e| {
-        CommandError {
-            msg: "An error occurred in the inner application layer.".to_owned(),
-            source: e,
-        }
-    })
-}
-
-#[non_exhaustive]
-#[derive(Default)]
-pub struct ArchiveArguments {}
-
-pub fn archive_command(
-    global_args: GlobalArguments,
-    args: ArchiveArguments,
-) -> Result<(), CommandError> {
-    inner_archive_command().map_err(|e| CommandError {
+    inner_secret_command(
+        global_args.clone().into(),
+        Some(global_args.into()),
+        args.service,
+        args.key,
+        args.prompt,
+    )
+    .map_err(|e| CommandError {
         msg: "An error occurred in the inner application layer.".to_owned(),
         source: e,
     })

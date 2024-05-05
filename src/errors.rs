@@ -8,13 +8,6 @@ use crate::filesystem::FileError;
 
 #[derive(ThisError, Debug)]
 #[error("{msg} {source}")]
-struct IOError {
-    msg: String,
-    source: StdIOError,
-}
-
-#[derive(ThisError, Debug)]
-#[error("{msg} {source}")]
 pub(crate) struct ProcessError {
     pub(crate) msg: String,
     pub(crate) source: ProcessErrorKind,

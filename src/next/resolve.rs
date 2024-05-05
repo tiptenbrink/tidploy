@@ -109,7 +109,7 @@ fn env_scope_args() -> SecretScopeArguments {
             "TIDPLOY_SECRET_SCOPE_NAME" => scope_args.name = Some(v),
             "TIDPLOY_SECRET_SCOPE_SUB" => scope_args.sub = Some(v),
             "TIDPLOY_SECRET_SERVICE" => scope_args.service = Some(v),
-            "TIDPLOY_SECRET_REQUIRE_HASH" => scope_args.require_hash = Some(v.len() > 0),
+            "TIDPLOY_SECRET_REQUIRE_HASH" => scope_args.require_hash = Some(!v.is_empty()),
             _ => {}
         }
     }
