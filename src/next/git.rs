@@ -123,7 +123,6 @@ pub(crate) fn ls_remote(
 
     let args = vec!["ls-remote", "origin", pattern];
     let out = run_git(repo_dir, args, "ls-remote origin")?;
-    println!("out: {}", &out);
 
     let split = out.trim().split("\n");
     let lines: Vec<&str> = split.take(3).collect();
@@ -197,17 +196,16 @@ pub(crate) fn get_dir_from_git(address: GitAddress, state_path: &RelativePath, s
     
     let commit = ls_remote(&target_dir, &address.git_ref).to_state_err("Error getting provided tag.".to_owned())?;
     let commit_dir = store_dir.join("commits");
-    println!("{}", commit);
     let commit_path = commit_dir.join(&dir_name).join(&commit);
 
-    let state_root = address.path.join(state_root);
-    let state_path = state_root.join(&state_root);
+    let state_root_git = address.path.join(&state_root);
+    let state_path_git = state_root.join(&state_path);
 
     if !commit_path.exists() {
         git_fetch(&target_dir).to_state_err("Error updating repository to ensure commit exists.".to_owned())?;
         copy_dir_all(&target_dir, &commit_path).to_state_err("Error copying main repository before checkout.".to_owned())?;
         checkout(&commit_path, &commit).to_state_err("Error checking out new commit.".to_owned())?;
-        let paths = vec![state_path.as_str(), state_root.as_str()];
+        let paths = vec![state_root_git.as_str(), state_path_git.as_str()];
         sparse_checkout(&commit_path, paths).to_state_err("Error setting new paths for sparse checkout.".to_owned())?;
         remove_dir_all(commit_path.join(".git")).to_state_err("Error removing .git directory.".to_owned())?;
     }

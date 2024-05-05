@@ -10,3 +10,4 @@ pub(crate) mod run;
 pub(crate) mod secrets;
 pub(crate) mod state;
 pub(crate) mod fs;
+pub(crate) mod deploy;

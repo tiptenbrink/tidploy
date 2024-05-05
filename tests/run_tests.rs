@@ -167,7 +167,7 @@ fn test_git_download() -> Result<(), CommandError> {
     let output = run_command(global_args, args)?;
     assert!(output.exit.success());
 
-    assert_eq!("I'm there!\n", output.out);
+    assert_eq!("I'm here!\n", output.out);
 
     Ok(())
 }
