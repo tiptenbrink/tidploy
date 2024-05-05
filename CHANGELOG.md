@@ -1,7 +1,13 @@
 # Changelog
 
-## 0.14.0 2024-
+## 0.14.0 2024-05-05
 
+* Very large update that includes a complete rewrite, currently gated behind `tidploy next`. v1 should hopefully make this the default.
+* There is no backwards compatibility with the portion behind `next`, nearly all options have been changed. State resolution is quite different now, with actual loops that try to converge
+* There is an "address" system that replaces the way download previously worked
+* No more archives, this didn't really add anything
+* Git tags are handled quite differently now, we use ls-remote to find the correct commit, they are also cached and stored differently
+* Added testing and examples
 * Start using (color-)eyre which should print the errors in a nicer format and makes especially the more application-level IO errors a lot easier to handle. This also includes a spantrace and a location, which makes it much easier to track where the error actually occurred. 
 
 ## 0.13.1 2024-03-16
