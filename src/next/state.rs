@@ -7,9 +7,7 @@ use tracing::{debug, instrument};
 use crate::filesystem::WrapToPath;
 
 use super::{
-    config::{traverse_configs, ConfigAddress, ConfigVar, StateConfig},
-    errors::{AddressError, StateError, StateErrorKind, WrapStateErr},
-    git::git_root_dir,
+    config::{traverse_configs, ConfigAddress, ConfigVar, StateConfig}, errors::{AddressError, StateError, StateErrorKind, WrapStateErr}, fs::get_dirs, git::{get_dir_from_git, git_root_dir}
 };
 
 #[derive(Debug)]
@@ -161,10 +159,11 @@ impl Address {
             ConfigAddress::Git {
                 url,
                 git_ref,
+                target_path,
                 state_path,
                 state_root,
             } => Address {
-                root: AddressRoot::Git(GitAddress { url, git_ref }),
+                root: AddressRoot::Git(GitAddress { url, git_ref, path: RelativePathBuf::from(target_path.unwrap_or_default()) }),
                 state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
                 state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
             },
@@ -195,6 +194,7 @@ impl Address {
 pub(crate) struct GitAddress {
     pub(crate) url: String,
     pub(crate) git_ref: String,
+    pub(crate) path: RelativePathBuf
 }
 
 #[derive(Debug, Clone)]
@@ -318,7 +318,7 @@ pub(crate) fn parse_url_repo_name(url: &str) -> Result<String, AddressError> {
     Ok(name)
 }
 
-fn resolve_address(address: Address) -> Result<State, AddressError> {
+fn resolve_address(address: Address, store_dir: &Utf8Path) -> Result<State, StateError> {
     let Address {
         state_path,
         state_root,
@@ -326,10 +326,8 @@ fn resolve_address(address: Address) -> Result<State, AddressError> {
     } = address;
 
     match root {
-        AddressRoot::Git(GitAddress { url, git_ref }) => {
-            let name = parse_url_repo_name(&url)?;
-
-            todo!()
+        AddressRoot::Git(addr) => {
+            get_dir_from_git(addr, &state_path, &state_root, store_dir)
         }
         AddressRoot::Local(path) => Ok(State {
             resolve_root: path,
@@ -348,15 +346,25 @@ fn resolve_address(address: Address) -> Result<State, AddressError> {
 //     Ok(())
 // }
 
+
+pub(crate) struct StateOptions {
+    pub(crate) store_dir: Utf8PathBuf
+}
+
+impl Default for StateOptions {
+    fn default() -> Self {
+        Self { store_dir: get_dirs().cache.clone() }
+    }
+}
+
 #[instrument(name = "state", level = "debug", skip_all)]
-pub(crate) fn create_resolve_state(state_in: StateIn) -> Result<ResolveState, StateError> {
+pub(crate) fn create_resolve_state(state_in: StateIn, opt: StateOptions) -> Result<ResolveState, StateError> {
     let paths = StatePaths::new(state_in)?;
 
     let mut state = converge_state(&paths.into())?;
 
     while let Some(address) = state.address.clone() {
-        state = resolve_address(address)
-            .to_state_err("Error resolving address for state!".to_owned())?;
+        state = resolve_address(address, &opt.store_dir)?;
         debug!("Moved to address, new state is {:?}", state);
         state = converge_state(&state)?;
     }

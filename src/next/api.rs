@@ -1,8 +1,9 @@
 use super::archives::archive_command as inner_archive_command;
 use super::run::run_command_input as inner_run_command;
 use super::secrets::secret_command as inner_secret_command;
-use super::state::StateIn;
+use super::state::{StateIn, StateOptions};
 
+use camino::Utf8PathBuf;
 use color_eyre::eyre::Report;
 use thiserror::Error as ThisError;
 
@@ -24,12 +25,14 @@ pub use crate::state::StateContext;
 /// global_args.cwd_context = false;
 /// ```
 #[non_exhaustive]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GlobalArguments {
     pub cwd_context: bool,
     pub resolve_root: Option<String>,
     pub state_root: Option<String>,
-    pub state_path: Option<String>, // pub repo_url: Option<String>,
+    pub state_path: Option<String>, 
+    pub store_dir: Option<Utf8PathBuf>
+    // pub repo_url: Option<String>,
                                     // pub deploy_path: Option<String>,
                                     // pub tag: Option<String>,
 }
@@ -37,6 +40,16 @@ pub struct GlobalArguments {
 impl From<GlobalArguments> for StateIn {
     fn from(value: GlobalArguments) -> Self {
         Self::from_args(value.cwd_context, value.resolve_root, value.state_path, value.state_root)
+    }
+}
+
+impl From<GlobalArguments> for StateOptions {
+    fn from(value: GlobalArguments) -> Self {
+        let default = Self::default();
+
+        Self {
+            store_dir: value.store_dir.unwrap_or(default.store_dir)
+        }
     }
 }
 
@@ -66,7 +79,8 @@ pub fn run_command(
     args: RunArguments,
 ) -> Result<EntrypointOut, CommandError> {
     inner_run_command(
-        global_args.into(),
+        global_args.clone().into(),
+        Some(global_args.into()),
         args.service,
         args.executable,
         args.execution_path,
@@ -91,7 +105,7 @@ pub fn secret_command(
     global_args: GlobalArguments,
     args: SecretArguments,
 ) -> Result<String, CommandError> {
-    inner_secret_command(global_args.into(), args.service, args.key, args.prompt).map_err(|e| {
+    inner_secret_command(global_args.clone().into(), Some(global_args.into()), args.service, args.key, args.prompt).map_err(|e| {
         CommandError {
             msg: "An error occurred in the inner application layer.".to_owned(),
             source: e,

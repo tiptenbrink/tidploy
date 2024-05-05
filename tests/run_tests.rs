@@ -156,6 +156,22 @@ fn test_config_address() -> Result<(), CommandError> {
     Ok(())
 }
 
+#[test]
+fn test_git_download() -> Result<(), CommandError> {
+    let mut global_args = GlobalArguments::default();
+    let mut args = RunArguments::default();
+    //global_args.context = Some(StateContext::None);
+    global_args.resolve_root = Some("examples/download/source".to_owned());
+    global_args.store_dir = Some(Utf8PathBuf::from("/tmp/tidploy"));
+
+    let output = run_command(global_args, args)?;
+    assert!(output.exit.success());
+
+    assert_eq!("I'm there!\n", output.out);
+
+    Ok(())
+}
+
 // #[test]
 // fn test_archive() -> Result<(), CommandError> {
 //     let global_args = GlobalArguments::default();

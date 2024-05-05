@@ -1,0 +1,4 @@
+[state.address]
+url = "https://github.com/tiptenbrink/tidploy.git"
+git_ref = "HEAD"
+target_path = "examples/download/target"

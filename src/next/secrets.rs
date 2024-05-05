@@ -14,7 +14,7 @@ use super::{
     config::ConfigVar,
     errors::{SecretError, SecretKeyringError, StateError, WrapStateErr},
     resolve::SecretScope,
-    state::StateIn,
+    state::{StateIn, StateOptions},
 };
 
 fn get_keyring_secret(key: &str, service: &str) -> Result<Option<String>, KeyringError> {
@@ -104,6 +104,7 @@ fn secret_prompt(
 
 pub(crate) fn secret_command(
     state_in: StateIn,
+    state_options: Option<StateOptions>,
     service: Option<String>,
     key: String,
     prompt: Option<String>,
@@ -118,7 +119,7 @@ pub(crate) fn secret_command(
         ..Default::default()
     };
     let secret_args = SecretArguments { key, scope_args };
-    let resolve_state = create_resolve_state(state_in)?;
+    let resolve_state = create_resolve_state(state_in, state_options.unwrap_or_default())?;
 
     let secret_resolved = merge_and_resolve(secret_args, resolve_state)?;
 

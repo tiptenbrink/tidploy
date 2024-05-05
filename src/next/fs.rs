@@ -1,6 +1,6 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use directories::ProjectDirs;
-use std::{env, sync::OnceLock};
+use std::{env, fs::create_dir, sync::OnceLock};
 
 
 pub(crate) struct Dirs {
@@ -8,6 +8,7 @@ pub(crate) struct Dirs {
     pub(crate) tmp: Utf8PathBuf,
 }
 
+/// You cannot assume these directories actually exist.
 pub(crate) fn get_dirs() -> &'static Dirs {
     static DIRS: OnceLock<Dirs> = OnceLock::new();
     DIRS.get_or_init(|| {

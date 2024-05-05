@@ -84,7 +84,7 @@ pub fn match_command(next_sub: NextSub) -> Result<ExitCode, Report> {
 
     match subcommand {
         crate::next::commands::NextCommands::Secret { key } => {
-            secret_command(state_in, None, key, None)?;
+            secret_command(state_in, None, None, key, None)?;
 
             Ok(ExitCode::from(0))
         }

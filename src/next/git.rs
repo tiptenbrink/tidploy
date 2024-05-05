@@ -1,13 +1,16 @@
 use camino::Utf8Path;
+use relative_path::RelativePath;
 use spinoff::{spinners, Spinner};
 use tracing::debug;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64USNP, Engine};
 
+use crate::{filesystem::WrapToPath, next::errors::{ContextIOError, ProcessError, ProcessIOError, WrapStateErr}};
+
 use super::{
-    errors::{GitError, GitProcessError}, fs::{get_dirs, Dirs}, process::process_complete_output, state::parse_url_repo_name
+    errors::{GitError, GitProcessError, StateError}, fs::{get_dirs, Dirs}, process::process_complete_output, state::{parse_url_repo_name, GitAddress, State}
 };
 use core::fmt::Debug;
-use std::{ffi::OsStr, fs, io, path::{Path, PathBuf}};
+use std::{ffi::OsStr, fs::{self, create_dir_all, remove_dir_all}, io, path::{Path, PathBuf}};
 
 fn run_git<S: AsRef<OsStr> + Debug>(
     working_dir: &Utf8Path,
@@ -47,13 +50,17 @@ pub(crate) fn repo_clone(
         "Cloning repository {} directory at target {}",
         repo_url, target_name
     );
+    create_dir_all(&current_dir).map_err(|e| GitError::IO(ContextIOError {
+        msg: format!("Failed to create directory {} to Git clone to!", current_dir),
+        source: e
+    }))?;
     let mut sp = Spinner::new(spinners::Line, "Cloning repository...", None);
 
     let clone_args = vec!["clone", "--filter=tree:0", "--sparse", "--no-checkout", repo_url, target_name];
     run_git(current_dir, clone_args, "partial clone sparse")?;
-    // let target_dir = current_dir.join(target_name);
-    // let checkout_args = vec!["sparse-checkout", "init", "--cone"];
-    // run_git(&target_dir, checkout_args, "partial clone sparse")?;
+    let target_dir = current_dir.join(target_name);
+    let checkout_args = vec!["sparse-checkout", "init", "--cone"];
+    run_git(&target_dir, checkout_args, "partial clone sparse")?;
 
     sp.success("Repository cloned!");
 
@@ -102,6 +109,7 @@ pub(crate) fn sparse_checkout(
     Ok(())
 }
 
+#[derive(Debug)]
 struct ShaRef {
     sha: String,
     tag: String
@@ -114,7 +122,8 @@ pub(crate) fn ls_remote(
     let mut sp = Spinner::new(spinners::Line, "Getting commit hash from remote...", None);
 
     let args = vec!["ls-remote", "origin", pattern];
-    let out = run_git(repo_dir, args, "partial clone sparse")?;
+    let out = run_git(repo_dir, args, "ls-remote origin")?;
+    println!("out: {}", &out);
 
     let split = out.trim().split("\n");
     let lines: Vec<&str> = split.take(3).collect();
@@ -136,25 +145,29 @@ pub(crate) fn ls_remote(
         })
     }).collect::<Result<Vec<ShaRef>,GitError>>()?;
 
-    let rev_parse_arg = if sha_refs.len() == 2 {
-        // We want the one without ^{} so we can add it ourselves
+    let commit = if sha_refs.len() == 2 {
+        // We want the one with ^{}
         if sha_refs[0].tag.ends_with("^{}") {
-            &sha_refs[1].tag
+            &sha_refs[0].sha
+        } else if sha_refs[1].tag.ends_with("^{}") {
+            &sha_refs[1].sha
         } else {
-            &sha_refs[0].tag
+            return Err(GitError::Failed(format!("Could not choose tag from two options for ls-remote: {:?}", &sha_refs)))
         }
     } else if sha_refs.len() == 1 {
-        &sha_refs[0].tag
+        &sha_refs[0].sha
+    // Assume that the pattern given is a commit itself
     } else {
         pattern
     };
-    let rev_parse_arg = format!("{}^{{}}", rev_parse_arg);
-    let args = vec!["rev-parse", &rev_parse_arg];
-    let commit = run_git(repo_dir, args, "rev-parse commit/tag")?;
+    //let rev_parse_arg = format!("{}^{{}}", rev_parse_arg);
+    //println!("rev_parse_arg {}", &rev_parse_arg);
+    //let args = vec!["rev-parse", &rev_parse_arg];
+    //let commit = run_git(repo_dir, args, "rev-parse commit/tag")?;
 
     sp.success("Got commit hash from remote!");
 
-    Ok(commit)
+    Ok(commit.to_owned())
 }
 
 /// https://stackoverflow.com/a/65192210
@@ -172,6 +185,42 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> 
     Ok(())
 }
 
+pub(crate) fn get_dir_from_git(address: GitAddress, state_path: &RelativePath, state_root: &RelativePath, store_dir: &Utf8Path) -> Result<State, StateError> {
+    let encoded_url = B64USNP.encode(&address.url);
+    let name = parse_url_repo_name(&address.url).to_state_err("Error passing Git url for determining name.".to_owned())?;
+    let dir_name = format!("{}_{}", name, encoded_url);
+
+    let target_dir = store_dir.join(&dir_name);
+    if !target_dir.exists() {
+        repo_clone(store_dir, &dir_name, &address.url).to_state_err("Error cloning repository in address.".to_owned())?;
+    }
+    
+    let commit = ls_remote(&target_dir, &address.git_ref).to_state_err("Error getting provided tag.".to_owned())?;
+    let commit_dir = store_dir.join("commits");
+    println!("{}", commit);
+    let commit_path = commit_dir.join(&dir_name).join(&commit);
+
+    let state_root = address.path.join(state_root);
+    let state_path = state_root.join(&state_root);
+
+    if !commit_path.exists() {
+        git_fetch(&target_dir).to_state_err("Error updating repository to ensure commit exists.".to_owned())?;
+        copy_dir_all(&target_dir, &commit_path).to_state_err("Error copying main repository before checkout.".to_owned())?;
+        checkout(&commit_path, &commit).to_state_err("Error checking out new commit.".to_owned())?;
+        let paths = vec![state_path.as_str(), state_root.as_str()];
+        sparse_checkout(&commit_path, paths).to_state_err("Error setting new paths for sparse checkout.".to_owned())?;
+        remove_dir_all(commit_path.join(".git")).to_state_err("Error removing .git directory.".to_owned())?;
+    }
+
+    Ok(State {
+        resolve_root: address.path.to_utf8_path(&commit_path),
+        state_root: state_root.to_owned(),
+        state_path: state_path.to_owned(),
+        address: None
+    })
+    
+}
+
 fn do_clone() {
     // Have a single sparse, no-checkout repo for each URL
     // do ls-remote to find the tag
@@ -180,23 +229,27 @@ fn do_clone() {
     // In the new repo
     // git checkout <commit>
     // Do the sparse-checkout
+    // Assumes git dir is .git
 
     let dirs = get_dirs();
     let cache = dirs.cache.as_path();
     let tmp = dirs.tmp.as_path();
+    println!("{}", cache);
 
     let url = "https://github.com/tiptenbrink/tidploy.git";
     let encoded_url = B64USNP.encode(url);
     let name = parse_url_repo_name(&url).unwrap();
     let dir_name = format!("{}_{}", name, encoded_url);
-    
+
     let target_dir = tmp.join(&dir_name);
-    repo_clone(tmp, &dir_name, url).unwrap();
+    if !target_dir.exists() {
+        repo_clone(tmp, &dir_name, url).unwrap();
+    }
+    
     let commit = ls_remote(&target_dir, "HEAD").unwrap();
     let tmp_commits = tmp.join("commits");
     println!("{}", commit);
-    let commit_path_name = format!("{}_{}", dir_name, commit);
-    let commit_path = tmp_commits.join(commit_path_name);
+    let commit_path = tmp_commits.join(&dir_name).join(&commit);
 
     if !commit_path.exists() {
         git_fetch(&target_dir).unwrap();
@@ -204,6 +257,7 @@ fn do_clone() {
         checkout(&commit_path, &commit).unwrap();
         let paths = vec!["examples", "src"];
         sparse_checkout(&commit_path, paths).unwrap();
+        remove_dir_all(commit_path.join(".git")).unwrap();
     }
     
 }

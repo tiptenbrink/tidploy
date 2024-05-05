@@ -16,7 +16,7 @@ use crate::{
 use super::{
     process::{run_entrypoint, EntrypointOut},
     resolve::RunResolved,
-    state::StateIn,
+    state::{StateIn, StateOptions},
 };
 
 pub(crate) fn run_command(
@@ -28,6 +28,7 @@ pub(crate) fn run_command(
 ) -> Result<EntrypointOut, Report> {
     run_command_input(
         state_in,
+        None,
         service,
         executable,
         execution_path,
@@ -90,6 +91,7 @@ pub(crate) fn run_command_input_old_state(
 #[instrument(name = "run", level = "debug", skip_all)]
 pub(crate) fn run_command_input(
     state_in: StateIn,
+    state_options: Option<StateOptions>,
     service: Option<String>,
     executable: Option<String>,
     execution_path: Option<String>,
@@ -108,7 +110,7 @@ pub(crate) fn run_command_input(
         envs: parse_cli_vars(variables),
         scope_args,
     };
-    let resolve_state = create_resolve_state(state_in)?;
+    let resolve_state = create_resolve_state(state_in, state_options.unwrap_or_default())?;
 
     let run_resolved = merge_and_resolve(run_args, resolve_state)?;
 

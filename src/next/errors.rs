@@ -1,5 +1,5 @@
 use keyring::Error as KeyringError;
-use std::io::Error as IOError;
+use std::io::{self, Error as IOError};
 use thiserror::Error as ThisError;
 use tracing_error::TracedError;
 
@@ -92,11 +92,20 @@ pub(crate) struct GitProcessError {
 }
 
 #[derive(ThisError, Debug)]
+#[error("{msg} {source}")]
+pub(crate) struct ContextIOError {
+    pub(crate) msg: String,
+    pub(crate) source: IOError
+}
+
+#[derive(ThisError, Debug)]
 pub(crate) enum GitError {
     #[error("Git command failed with following output: {0}")]
     Failed(String),
     #[error("Process error trying to run Git! {0}")]
-    IO(#[from] GitProcessError),
+    Process(#[from] GitProcessError),
+    #[error("Error with the filesystem before running Git: {0}")]
+    IO(#[from] ContextIOError)
 }
 
 #[derive(ThisError, Debug)]
