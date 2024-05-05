@@ -6,9 +6,7 @@ use crate::{
     archives::extract_archive,
     filesystem::{get_dirs, WrapToPath},
     next::{
-        resolve::{merge_and_resolve, RunArguments, SecretScopeArguments},
-        secrets::secret_vars_to_envs,
-        state::{create_resolve_state, parse_cli_vars},
+        git::git_root_origin_url, resolve::{merge_and_resolve, RunArguments, SecretScopeArguments}, secrets::secret_vars_to_envs, state::{create_resolve_state, parse_cli_vars, resolve_from_base_state, AddressRoot, GitAddress, State, StatePaths}
     },
     state::{create_state_create, create_state_run, CliEnvState},
 };
@@ -16,7 +14,7 @@ use crate::{
 use super::{
     process::{run_entrypoint, EntrypointOut},
     resolve::RunResolved,
-    state::{StateIn, StateOptions},
+    state::{Address, StateIn, StateOptions},
 };
 
 pub(crate) fn run_command(
@@ -131,4 +129,61 @@ pub(crate) fn run_unit_input(
         secret_vars,
         input_bytes,
     )
+}
+
+struct A
+
+#[instrument(name = "deploy", level = "debug", skip_all)]
+pub(crate) fn deploy_command(
+    state_in: StateIn,
+    state_options: Option<StateOptions>,
+    address: Option<Address>,
+    service: Option<String>,
+    executable: Option<String>,
+    execution_path: Option<String>,
+    variables: Vec<String>,
+    input_bytes: Option<Vec<u8>>,
+) -> Result<EntrypointOut, Report> {
+    debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
+
+    let scope_args = SecretScopeArguments {
+        service,
+        ..Default::default()
+    };
+    let run_args = RunArguments {
+        executable,
+        execution_path,
+        envs: parse_cli_vars(variables),
+        scope_args,
+    };
+    let paths = StatePaths::new(state_in)?;
+
+    // Either provide address, or give none (then it's inferred)
+    let address = match address {
+        None => {
+            let url = git_root_origin_url(&paths.resolve_root)?;
+
+            Address {
+                root: AddressRoot::Git(GitAddress {
+                    url,
+                    git_ref: "HEAD".to_owned(),
+                    path: RelativePathBuf::new()
+                    
+                }), state_root: RelativePathBuf::new(), state_path: RelativePathBuf::new()
+            }
+        },
+        Some(address) => address
+    };
+
+    let state = State {
+        address: Some(address),
+        ..State::from(paths)
+    };
+
+
+    let resolve_state = resolve_from_base_state(state, state_options.unwrap_or_default())?;
+
+    let run_resolved = merge_and_resolve(run_args, resolve_state)?;
+
+    run_unit_input(run_resolved, input_bytes)
 }

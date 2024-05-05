@@ -251,3 +251,13 @@ pub(crate) fn get_dir_from_git(
         address: None,
     })
 }
+
+pub(crate) fn git_root_origin_url(path: &Utf8Path) -> Result<String, GitError> {
+    let args = vec!["config", "--get", "remote.origin.url"];
+
+    let url = run_git(path, args, "get git root origin url")?;
+
+    debug!("Read remote url from git root origin: {}", url);
+
+    Ok(url)
+}

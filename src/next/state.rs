@@ -65,7 +65,7 @@ pub(crate) struct StatePaths {
 impl StatePaths {
     /// Creates a StatePaths struct with the context root set to the current directory. The executable
     /// is set to a default of "entrypoint.sh".
-    fn new(state_in: StateIn) -> Result<Self, StateError> {
+    pub(crate) fn new(state_in: StateIn) -> Result<Self, StateError> {
         let current_dir =
             current_dir().to_state_err("Getting current dir for new StatePaths".to_owned())?;
         let current_dir = Utf8PathBuf::from_path_buf(current_dir).map_err(|_e| StateError {
@@ -136,9 +136,9 @@ pub(crate) fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Address {
-    root: AddressRoot,
-    state_root: RelativePathBuf,
-    state_path: RelativePathBuf,
+    pub(crate) root: AddressRoot,
+    pub(crate) state_root: RelativePathBuf,
+    pub(crate) state_path: RelativePathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -360,14 +360,10 @@ impl Default for StateOptions {
 }
 
 #[instrument(name = "state", level = "debug", skip_all)]
-pub(crate) fn create_resolve_state(
-    state_in: StateIn,
+pub(crate) fn resolve_from_base_state(
+    mut state: State,
     opt: StateOptions,
 ) -> Result<ResolveState, StateError> {
-    let paths = StatePaths::new(state_in)?;
-
-    let mut state = converge_state(&paths.into())?;
-
     while let Some(address) = state.address.clone() {
         state = resolve_address(address, &opt.store_dir)?;
         debug!("Moved to address, new state is {:?}", state);
@@ -389,4 +385,13 @@ pub(crate) fn create_resolve_state(
         sub: "tidploy_root".to_owned(),
         hash: "todo_hash".to_owned(),
     })
+}
+
+pub(crate) fn create_resolve_state(
+    state_in: StateIn,
+    opt: StateOptions,
+) -> Result<ResolveState, StateError> {
+    let paths = StatePaths::new(state_in)?;
+
+    resolve_from_base_state(paths.into(), opt)
 }
