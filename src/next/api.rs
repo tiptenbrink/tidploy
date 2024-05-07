@@ -1,12 +1,13 @@
-use super::run::run_command_input as inner_run_command;
+use super::run::{run_command_input as inner_run_command, RunOptions};
 use super::secrets::secret_command as inner_secret_command;
-use super::state::{StateIn, StateOptions};
+use super::state::StateOptions;
 
 use camino::Utf8PathBuf;
 use color_eyre::eyre::Report;
 use thiserror::Error as ThisError;
 
 pub use super::process::EntrypointOut;
+pub use super::state::{AddressIn, GitAddressIn, LocalAddressIn};
 pub use crate::state::StateContext;
 
 /// These represent global arguments that correspond to global args of the CLI (i.e. valid for all
@@ -21,30 +22,49 @@ pub use crate::state::StateContext;
 /// ```
 /// # use tidploy::GlobalArguments;
 /// # let mut global_args = GlobalArguments::default();
-/// global_args.cwd_context = false;
+/// global_args.git_infer = false;
 /// ```
 #[non_exhaustive]
 #[derive(Default, Clone)]
 pub struct GlobalArguments {
-    pub cwd_context: bool,
-    pub resolve_root: Option<String>,
-    pub state_root: Option<String>,
-    pub state_path: Option<String>,
-    pub store_dir: Option<Utf8PathBuf>, // pub repo_url: Option<String>,
-                                        // pub deploy_path: Option<String>,
-                                        // pub tag: Option<String>,
+    pub git_infer: bool,
+    pub store_dir: Option<Utf8PathBuf>,
+    pub address: Option<AddressIn>,
 }
 
-impl From<GlobalArguments> for StateIn {
-    fn from(value: GlobalArguments) -> Self {
-        Self::from_args(
-            value.cwd_context,
-            value.resolve_root,
-            value.state_path,
-            value.state_root,
-        )
+impl GlobalArguments {
+    fn run_in(&self) -> AddressIn {
+        match self.address.clone() {
+            Some(address) => address,
+            None => AddressIn::from_run(None, None, None),
+        }
     }
+
+    fn secret_in(&self) -> AddressIn {
+        match self.address.clone() {
+            Some(address) => address,
+            None => AddressIn::from_secret(None, None, None),
+        }
+    }
+
+    // fn deploy_in(&self) -> AddressIn {
+    //     match self.address.clone() {
+    //         Some(address) => address,
+    //         None => AddressIn::from_deploy(None, None, None, None, None)
+    //     }
+    // }
 }
+
+// impl From<GlobalArguments> for AddressIn {
+//     fn from(value: GlobalArguments) -> Self {
+//         Self::from_args(
+//             value.cwd_context,
+//             value.resolve_root,
+//             value.state_path,
+//             value.state_root,
+//         )
+//     }
+// }
 
 impl From<GlobalArguments> for StateOptions {
     fn from(value: GlobalArguments) -> Self {
@@ -82,13 +102,16 @@ pub fn run_command(
     args: RunArguments,
 ) -> Result<EntrypointOut, CommandError> {
     inner_run_command(
-        global_args.clone().into(),
+        global_args.run_in(),
+        global_args.git_infer,
         Some(global_args.into()),
-        args.service,
+        RunOptions {
+            service: args.service,
+            input_bytes: args.input_bytes,
+        },
         args.executable,
         args.execution_path,
         args.variables,
-        args.input_bytes,
     )
     .map_err(|e| CommandError {
         msg: "An error occurred in the inner application layer.".to_owned(),
@@ -109,7 +132,8 @@ pub fn secret_command(
     args: SecretArguments,
 ) -> Result<String, CommandError> {
     inner_secret_command(
-        global_args.clone().into(),
+        global_args.secret_in(),
+        !global_args.git_infer,
         Some(global_args.into()),
         args.service,
         args.key,

@@ -7,14 +7,14 @@ use tracing::{debug, instrument};
 
 use crate::next::{
     resolve::{merge_and_resolve, SecretArguments, SecretScopeArguments},
-    state::create_resolve_state,
+    state::{create_resolve_state, InferContext},
 };
 
 use super::{
     config::ConfigVar,
     errors::{SecretError, SecretKeyringError, StateError, WrapStateErr},
     resolve::SecretScope,
-    state::{StateIn, StateOptions},
+    state::{AddressIn, StateOptions},
 };
 
 fn get_keyring_secret(key: &str, service: &str) -> Result<Option<String>, KeyringError> {
@@ -103,15 +103,16 @@ fn secret_prompt(
 }
 
 pub(crate) fn secret_command(
-    state_in: StateIn,
+    addr_in: AddressIn,
+    cwd_infer: bool,
     state_options: Option<StateOptions>,
     service: Option<String>,
     key: String,
     prompt: Option<String>,
 ) -> Result<String, Report> {
     debug!(
-        "Secret command called with in_state {:?}, key {:?} and prompt {:?}",
-        state_in, key, prompt
+        "Secret command called with in_addr {:?}, key {:?} and prompt {:?}",
+        addr_in, key, prompt
     );
 
     let scope_args = SecretScopeArguments {
@@ -119,7 +120,13 @@ pub(crate) fn secret_command(
         ..Default::default()
     };
     let secret_args = SecretArguments { key, scope_args };
-    let resolve_state = create_resolve_state(state_in, state_options.unwrap_or_default())?;
+    let infer_ctx = if cwd_infer {
+        InferContext::Cwd
+    } else {
+        InferContext::Git
+    };
+    let resolve_state =
+        create_resolve_state(addr_in, infer_ctx, state_options.unwrap_or_default())?;
 
     let secret_resolved = merge_and_resolve(secret_args, resolve_state)?;
 

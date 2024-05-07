@@ -1,4 +1,3 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64USNP, Engine};
 use camino::Utf8Path;
 use relative_path::RelativePath;
 use spinoff::{spinners, Spinner};
@@ -18,7 +17,7 @@ use core::fmt::Debug;
 use std::{
     ffi::OsStr,
     fs::{self, create_dir_all, remove_dir_all},
-    io,
+    io::{self},
     path::Path,
 };
 
@@ -45,11 +44,11 @@ fn run_git<S: AsRef<OsStr> + Debug>(
     }
 }
 
-pub(crate) fn git_root_dir(path: &Utf8Path) -> Result<String, GitError> {
-    let args = vec!["rev-parse", "--show-toplevel"];
+// pub(crate) fn git_root_dir(path: &Utf8Path) -> Result<String, GitError> {
+//     let args = vec!["rev-parse", "--show-toplevel"];
 
-    run_git(path, args, "get git root dir")
-}
+//     run_git(path, args, "get git root dir")
+// }
 
 pub(crate) fn repo_clone(
     current_dir: &Utf8Path,
@@ -136,16 +135,9 @@ pub(crate) fn ls_remote(repo_dir: &Utf8Path, pattern: &str) -> Result<String, Gi
     let out = run_git(repo_dir, args, "ls-remote origin")?;
 
     let split = out.trim().split('\n');
-    let lines: Vec<&str> = split.take(3).collect();
-    if lines.len() > 2 {
-        return Err(GitError::Failed(format!(
-            "Pattern is not specific enough, cannot determine commit for {}",
-            pattern
-        )));
-    }
+    let lines: Vec<&str> = split.collect();
     let sha_refs = lines
         .into_iter()
-        .take(2)
         .map(|s| {
             let spl: Vec<&str> = s.split_whitespace().collect();
             if spl.len() != 2 {
@@ -162,7 +154,12 @@ pub(crate) fn ls_remote(repo_dir: &Utf8Path, pattern: &str) -> Result<String, Gi
         })
         .collect::<Result<Vec<ShaRef>, GitError>>()?;
 
-    let commit = if sha_refs.len() == 2 {
+    let commit = if sha_refs.is_empty() {
+        pattern
+    } else if sha_refs.len() >= 2 && sha_refs.iter().all(|s| s.sha == sha_refs[0].sha) {
+        // All the same, so no ambiguity
+        &sha_refs[0].sha
+    } else if sha_refs.len() == 2 {
         // We want the one with ^{}
         if sha_refs[0].tag.ends_with("^{}") {
             &sha_refs[0].sha
@@ -178,7 +175,10 @@ pub(crate) fn ls_remote(repo_dir: &Utf8Path, pattern: &str) -> Result<String, Gi
         &sha_refs[0].sha
     // Assume that the pattern given is a commit itself
     } else {
-        pattern
+        return Err(GitError::Failed(format!(
+            "Pattern is not specific enough, cannot determine commit for {}",
+            pattern
+        )));
     };
     //let rev_parse_arg = format!("{}^{{}}", rev_parse_arg);
     //println!("rev_parse_arg {}", &rev_parse_arg);
@@ -205,13 +205,31 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> 
     Ok(())
 }
 
+use sha2::{Digest, Sha256};
+
+fn hash_last_n(input: &str, n: usize) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input);
+    let mut result = hasher.finalize();
+    result.reverse();
+    let mut hex = format!("{:x}", result);
+    hex.truncate(n);
+
+    hex
+}
+
+fn str_last_n(input: &str, n: usize) -> &str {
+    let split_pos = input.char_indices().nth_back(n - 1).unwrap().0;
+    &input[split_pos..]
+}
+
 pub(crate) fn get_dir_from_git(
     address: GitAddress,
     state_path: &RelativePath,
     state_root: &RelativePath,
     store_dir: &Utf8Path,
 ) -> Result<State, StateError> {
-    let encoded_url = B64USNP.encode(&address.url);
+    let encoded_url = hash_last_n(&address.url, 8);
     let name = parse_url_repo_name(&address.url)
         .to_state_err("Error passing Git url for determining name.".to_owned())?;
     let dir_name = format!("{}_{}", name, encoded_url);
@@ -224,11 +242,21 @@ pub(crate) fn get_dir_from_git(
 
     let commit = ls_remote(&target_dir, &address.git_ref)
         .to_state_err("Error getting provided tag.".to_owned())?;
-    let commit_dir = store_dir.join("commits");
-    let commit_path = commit_dir.join(&dir_name).join(&commit);
+    let commit_short = str_last_n(&commit, 10);
+    let commit_dir = store_dir.join("c");
 
     let state_root_git = address.path.join(state_root);
     let state_path_git = state_root.join(state_path);
+
+    // Paths might not exist, so always do this
+    let mut paths = vec![state_root_git.as_str(), state_path_git.as_str()];
+    paths.sort();
+    let paths_name = paths.join("_");
+    let encoded_paths = hash_last_n(&paths_name, 8);
+    let commit_path = commit_dir
+        .join(&dir_name)
+        .join(commit_short)
+        .join(encoded_paths);
 
     if !commit_path.exists() {
         git_fetch(&target_dir)
@@ -237,7 +265,6 @@ pub(crate) fn get_dir_from_git(
             .to_state_err("Error copying main repository before checkout.".to_owned())?;
         checkout(&commit_path, &commit)
             .to_state_err("Error checking out new commit.".to_owned())?;
-        let paths = vec![state_root_git.as_str(), state_path_git.as_str()];
         sparse_checkout(&commit_path, paths)
             .to_state_err("Error setting new paths for sparse checkout.".to_owned())?;
         remove_dir_all(commit_path.join(".git"))

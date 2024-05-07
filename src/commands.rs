@@ -15,7 +15,7 @@ use crate::state::{
 };
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64USNP;
 use base64::Engine;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use color_eyre::eyre::Report;
 
 use std::fmt::Debug;
@@ -32,7 +32,7 @@ pub(crate) const TIDPLOY_DEFAULT: &str = "tidploy_default";
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    subcommand: Commands,
 
     /// Contexts other than git-remote (default) are not fully supported.
     #[arg(long, value_enum, global = true)]
@@ -268,6 +268,8 @@ pub fn run_cli() -> Result<ExitCode, Report> {
     // Note that it uses the Cargo.toml description as the main help command description
     let args = Cli::parse();
 
+    let cmd = Cli::command();
+
     let cli_state = CliEnvState {
         context: args.context,
         repo_url: args.repo,
@@ -277,7 +279,7 @@ pub fn run_cli() -> Result<ExitCode, Report> {
 
     debug!("Parsed CLI state as {:?}", cli_state);
 
-    match args.command {
+    match args.subcommand {
         Commands::Secret { key } => {
             let auth_span = span!(Level::DEBUG, "auth");
             let _auth_enter = auth_span.enter();
@@ -359,6 +361,6 @@ pub fn run_cli() -> Result<ExitCode, Report> {
 
             Ok(ExitCode::from(code))
         }
-        Commands::Next(next_sub) => match_command(next_sub),
+        Commands::Next(next_sub) => match_command(next_sub, cmd),
     }
 }

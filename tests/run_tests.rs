@@ -3,7 +3,8 @@ use keyring::Entry;
 use test_log::test;
 
 use tidploy::{
-    run_command, secret_command, CommandError, GlobalArguments, RunArguments, SecretArguments,
+    run_command, secret_command, AddressIn, CommandError, GlobalArguments, LocalAddressIn,
+    RunArguments, SecretArguments,
 };
 
 #[test]
@@ -145,7 +146,11 @@ fn test_config_address() -> Result<(), CommandError> {
     let mut global_args = GlobalArguments::default();
     let args = RunArguments::default();
     //global_args.context = Some(StateContext::None);
-    global_args.resolve_root = Some("examples/config/start".to_owned());
+    let address_local = LocalAddressIn {
+        resolve_root: Some("examples/config/start".to_owned()),
+        ..Default::default()
+    };
+    global_args.address = Some(AddressIn::Local(address_local));
 
     let output = run_command(global_args, args)?;
     assert!(output.exit.success());
@@ -160,7 +165,11 @@ fn test_git_download() -> Result<(), CommandError> {
     let mut global_args = GlobalArguments::default();
     let args = RunArguments::default();
     //global_args.context = Some(StateContext::None);
-    global_args.resolve_root = Some("examples/download/source".to_owned());
+    let address_local = LocalAddressIn {
+        resolve_root: Some("examples/download/source".to_owned()),
+        ..Default::default()
+    };
+    global_args.address = Some(AddressIn::Local(address_local));
     global_args.store_dir = Some(Utf8PathBuf::from("/tmp/tidploy"));
 
     let output = run_command(global_args, args)?;

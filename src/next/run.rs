@@ -6,7 +6,9 @@ use crate::{
     archives::extract_archive,
     filesystem::{get_dirs, WrapToPath},
     next::{
-        git::git_root_origin_url, resolve::{merge_and_resolve, RunArguments, SecretScopeArguments}, secrets::secret_vars_to_envs, state::{create_resolve_state, parse_cli_vars, resolve_from_base_state, AddressRoot, GitAddress, State, StatePaths}
+        resolve::{merge_and_resolve, RunArguments, SecretScopeArguments},
+        secrets::secret_vars_to_envs,
+        state::{create_resolve_state, parse_cli_vars, InferContext},
     },
     state::{create_state_create, create_state_run, CliEnvState},
 };
@@ -14,24 +16,28 @@ use crate::{
 use super::{
     process::{run_entrypoint, EntrypointOut},
     resolve::RunResolved,
-    state::{Address, StateIn, StateOptions},
+    state::{AddressIn, StateOptions},
 };
 
 pub(crate) fn run_command(
-    state_in: StateIn,
+    address_in: AddressIn,
+    git_infer: bool,
     service: Option<String>,
     executable: Option<String>,
     execution_path: Option<String>,
     variables: Vec<String>,
 ) -> Result<EntrypointOut, Report> {
     run_command_input(
-        state_in,
+        address_in,
+        git_infer,
         None,
-        service,
+        RunOptions {
+            service,
+            input_bytes: None,
+        },
         executable,
         execution_path,
         variables,
-        None,
     )
 }
 
@@ -86,20 +92,25 @@ pub(crate) fn run_command_input_old_state(
     run_entrypoint(&state.deploy_dir(), &exe_path, state.envs, input_bytes)
 }
 
+pub(crate) struct RunOptions {
+    pub(crate) service: Option<String>,
+    pub(crate) input_bytes: Option<Vec<u8>>,
+}
+
 #[instrument(name = "run", level = "debug", skip_all)]
 pub(crate) fn run_command_input(
-    state_in: StateIn,
+    addr_in: AddressIn,
+    git_infer: bool,
     state_options: Option<StateOptions>,
-    service: Option<String>,
+    run_options: RunOptions,
     executable: Option<String>,
     execution_path: Option<String>,
     variables: Vec<String>,
-    input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
-    debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
+    debug!("Run command called with addr_in {:?}, executable {:?}, variables {:?} and input_bytes {:?}", addr_in, executable, variables, run_options.input_bytes);
 
     let scope_args = SecretScopeArguments {
-        service,
+        service: run_options.service,
         ..Default::default()
     };
     let run_args = RunArguments {
@@ -108,11 +119,17 @@ pub(crate) fn run_command_input(
         envs: parse_cli_vars(variables),
         scope_args,
     };
-    let resolve_state = create_resolve_state(state_in, state_options.unwrap_or_default())?;
+    let infer_ctx = if git_infer {
+        InferContext::Git
+    } else {
+        InferContext::Cwd
+    };
+    let resolve_state =
+        create_resolve_state(addr_in, infer_ctx, state_options.unwrap_or_default())?;
 
     let run_resolved = merge_and_resolve(run_args, resolve_state)?;
 
-    run_unit_input(run_resolved, input_bytes)
+    run_unit_input(run_resolved, run_options.input_bytes)
 }
 
 pub(crate) fn run_unit_input(
@@ -131,59 +148,70 @@ pub(crate) fn run_unit_input(
     )
 }
 
-struct A
+// #[instrument(name = "address", level = "debug", skip_all)]
+// pub(crate) fn address_command(
+//     state_in: StateIn,
+//     address_in: AddressIn
+// ) -> Result<EntrypointOut, Report> {
+//     debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
 
-#[instrument(name = "deploy", level = "debug", skip_all)]
-pub(crate) fn deploy_command(
-    state_in: StateIn,
-    state_options: Option<StateOptions>,
-    address: Option<Address>,
-    service: Option<String>,
-    executable: Option<String>,
-    execution_path: Option<String>,
-    variables: Vec<String>,
-    input_bytes: Option<Vec<u8>>,
-) -> Result<EntrypointOut, Report> {
-    debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
+//     let resolve_state = resolve_from_base_state(state, state_options.unwrap_or_default())?;
 
-    let scope_args = SecretScopeArguments {
-        service,
-        ..Default::default()
-    };
-    let run_args = RunArguments {
-        executable,
-        execution_path,
-        envs: parse_cli_vars(variables),
-        scope_args,
-    };
-    let paths = StatePaths::new(state_in)?;
+//     let run_resolved = merge_and_resolve(run_args, resolve_state)?;
 
-    // Either provide address, or give none (then it's inferred)
-    let address = match address {
-        None => {
-            let url = git_root_origin_url(&paths.resolve_root)?;
+//     run_unit_input(run_resolved, input_bytes)
+// }
 
-            Address {
-                root: AddressRoot::Git(GitAddress {
-                    url,
-                    git_ref: "HEAD".to_owned(),
-                    path: RelativePathBuf::new()
-                    
-                }), state_root: RelativePathBuf::new(), state_path: RelativePathBuf::new()
-            }
-        },
-        Some(address) => address
-    };
+// #[instrument(name = "deploy", level = "debug", skip_all)]
+// pub(crate) fn deploy_command(
+//     state_in: StateIn,
+//     state_options: Option<StateOptions>,
+//     address: Option<Address>,
+//     service: Option<String>,
+//     executable: Option<String>,
+//     execution_path: Option<String>,
+//     variables: Vec<String>,
+//     input_bytes: Option<Vec<u8>>,
+// ) -> Result<EntrypointOut, Report> {
+//     debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
 
-    let state = State {
-        address: Some(address),
-        ..State::from(paths)
-    };
+//     let scope_args = SecretScopeArguments {
+//         service,
+//         ..Default::default()
+//     };
+//     let run_args = RunArguments {
+//         executable,
+//         execution_path,
+//         envs: parse_cli_vars(variables),
+//         scope_args,
+//     };
+//     let paths = StatePaths::new(state_in)?;
 
+//     // // Either provide address, or give none (then it's inferred)
+//     // let address = match address {
+//     //     None => {
+//     //         let url = git_root_origin_url(&paths.resolve_root)?;
 
-    let resolve_state = resolve_from_base_state(state, state_options.unwrap_or_default())?;
+//     //         Address {
+//     //             root: AddressRoot::Git(GitAddress {
+//     //                 url,
+//     //                 git_ref: "HEAD".to_owned(),
+//     //                 path: RelativePathBuf::new()
 
-    let run_resolved = merge_and_resolve(run_args, resolve_state)?;
+//     //             }), state_root: RelativePathBuf::new(), state_path: RelativePathBuf::new()
+//     //         }
+//     //     },
+//     //     Some(address) => address
+//     // };
 
-    run_unit_input(run_resolved, input_bytes)
-}
+//     let state = State {
+//         address: Some(address),
+//         ..State::from(paths)
+//     };
+
+//     let resolve_state = resolve_from_base_state(state, state_options.unwrap_or_default())?;
+
+//     let run_resolved = merge_and_resolve(run_args, resolve_state)?;
+
+//     run_unit_input(run_resolved, input_bytes)
+// }
