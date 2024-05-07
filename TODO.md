@@ -1,0 +1,1 @@
+* Add non-filesystem aware path normalizing (i.e. to remove "." at the end)

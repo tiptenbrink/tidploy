@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.0
+
+*
+
 ## 0.15.0 2024-05-07
 
 * Address system is now used to replace StateIn/StatePaths, deploy now also works similar to before

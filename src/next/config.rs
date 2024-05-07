@@ -41,6 +41,7 @@ pub(crate) enum ConfigAddress {
     },
     Git {
         url: String,
+        local: Option<bool>,
         git_ref: String,
         target_path: Option<String>,
         state_path: Option<String>,

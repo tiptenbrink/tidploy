@@ -46,7 +46,7 @@ pub(crate) enum StateErrorKind {
     Address(#[from] AddressError),
 }
 
-pub trait WrapStateErr<T, E> {
+pub(crate) trait WrapStateErr<T, E> {
     fn to_state_err(self, msg: String) -> Result<T, StateError>;
 }
 
@@ -121,7 +121,7 @@ pub(crate) enum ConfigErrorKind {
     JSONDecode(#[from] serde_json::Error),
 }
 
-pub trait WrapConfigErr<T, E> {
+pub(crate) trait WrapConfigErr<T, E> {
     fn to_config_err(self, msg: String) -> Result<T, ConfigError>;
 }
 

@@ -77,6 +77,9 @@ pub enum NextCommands {
 
         #[arg(long = "repo")]
         repo: Option<String>,
+
+        #[arg(long = "local")]
+        local: bool
     },
 }
 
@@ -137,6 +140,7 @@ pub fn match_command(next_sub: NextSub, _cmd: Command) -> Result<ExitCode, Repor
         NextCommands::Deploy {
             executable,
             variables,
+            local,
             execution_path,
             cwd_infer,
             repo,
@@ -144,7 +148,7 @@ pub fn match_command(next_sub: NextSub, _cmd: Command) -> Result<ExitCode, Repor
             state_path,
         } => {
             let addr_in =
-                AddressIn::from_deploy(repo, git_ref, resolve_root, state_path, state_root);
+                AddressIn::from_deploy(repo, local, git_ref, resolve_root, state_path, state_root);
             let out = run_command(
                 addr_in,
                 !cwd_infer,

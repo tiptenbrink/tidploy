@@ -192,7 +192,7 @@ impl Resolve<RunResolved> for RunArguments {
     fn resolve(self, resolve_root: &Utf8Path, name: &str, sub: &str, hash: &str) -> RunResolved {
         let scope = resolve_scope(self.scope_args, name, sub, hash);
 
-        let relative_exe = RelativePathBuf::from(self.executable.unwrap_or("".to_owned()));
+        let relative_exe = RelativePathBuf::from(self.executable.unwrap_or("entrypoint.sh".to_owned()));
         let relative_exn_path = RelativePathBuf::from(self.execution_path.unwrap_or("".to_owned()));
         RunResolved {
             executable: relative_exe.to_utf8_path(resolve_root),

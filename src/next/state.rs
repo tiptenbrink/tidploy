@@ -1,7 +1,7 @@
 use std::env::current_dir;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use relative_path::RelativePathBuf;
+use relative_path::{RelativePath, RelativePathBuf};
 use tracing::{debug, instrument};
 
 use crate::{filesystem::WrapToPath, next::git::git_root_origin_url};
@@ -33,6 +33,7 @@ pub struct LocalAddressIn {
 #[derive(Debug, Clone, Default)]
 pub struct GitAddressIn {
     pub url: Option<String>,
+    pub local: bool,
     pub git_ref: Option<String>,
     pub target_resolve_root: Option<String>,
     pub state_path: Option<String>,
@@ -72,6 +73,7 @@ impl AddressIn {
 
     pub(crate) fn from_deploy(
         url: Option<String>,
+        local: bool,
         git_ref: Option<String>,
         target_resolve_root: Option<String>,
         state_path: Option<String>,
@@ -79,6 +81,7 @@ impl AddressIn {
     ) -> Self {
         AddressIn::Git(GitAddressIn {
             url,
+            local,
             git_ref,
             target_resolve_root,
             state_path,
@@ -102,6 +105,7 @@ pub(crate) fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Address {
+    pub(crate) name: String,
     pub(crate) root: AddressRoot,
     pub(crate) state_root: RelativePathBuf,
     pub(crate) state_path: RelativePathBuf,
@@ -124,26 +128,45 @@ fn get_current_dir() -> Result<Utf8PathBuf, StateError> {
     })
 }
 
+fn url_local(url: String, local: bool, relative: &Utf8Path) -> String {
+    if local {
+        let path = Utf8Path::new(&url);
+        if path.is_relative() {
+            RelativePath::new(&url).to_utf8_path(relative).as_str().to_owned()
+        } else {
+            url
+        }
+    } else {
+        url
+    }
+}
+
 impl Address {
-    fn from_config_addr(value: ConfigAddress, resolve_root: &Utf8Path) -> Self {
+    fn from_config_addr(value: ConfigAddress, resolve_root: &Utf8Path) -> Result<Self, StateError> {
         debug!("Converting config_adress {:?} to address!", value);
 
-        match value {
+        let addr = match value {
             ConfigAddress::Git {
                 url,
+                local,
                 git_ref,
                 target_path,
                 state_path,
                 state_root,
-            } => Address {
-                root: AddressRoot::Git(GitAddress {
-                    url,
-                    git_ref,
-                    path: RelativePathBuf::from(target_path.unwrap_or_default()),
-                }),
-                state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
-                state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
-            },
+            } => {
+                let url = url_local(url, local.unwrap_or_default(), resolve_root);
+                let name = parse_url_name(&url)?;
+                Address {
+                    name,
+                    root: AddressRoot::Git(GitAddress {
+                        url,
+                        git_ref,
+                        path: RelativePathBuf::from(target_path.unwrap_or_default()),
+                    }),
+                    state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
+                    state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
+                }
+        }   ,
             ConfigAddress::Local {
                 path,
                 state_path,
@@ -157,13 +180,18 @@ impl Address {
                     address_root
                 };
 
+                let name = parse_url_name(root.as_str()).to_state_err("Error getting name from address root!".to_owned())?;
+
                 Address {
+                    name,
                     root: AddressRoot::Local(root),
                     state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
                     state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
                 }
             }
-        }
+        };
+
+        Ok(addr)
     }
 
     fn from_addr_in(value: AddressIn, infer_ctx: InferContext) -> Result<Self, StateError> {
@@ -172,16 +200,17 @@ impl Address {
         let addr = match value {
             AddressIn::Git(GitAddressIn {
                 url,
+                local,
                 git_ref,
                 state_path,
                 state_root,
                 target_resolve_root,
             }) => {
+                let current_dir = get_current_dir()?;
+                
                 let url = if let Some(url) = url {
-                    url
+                    url_local(url, local, &current_dir)
                 } else {
-                    let current_dir = get_current_dir()?;
-
                     match infer_ctx {
                         InferContext::Git => git_root_origin_url(&current_dir)
                             .to_state_err("Error resolving current Git repository.".to_owned())?,
@@ -191,6 +220,7 @@ impl Address {
                     // If you want to start with a Git repo but use a different resolve root and not give the URL
                     // Just start in a different directory!
                 };
+                let name = 
                 Address {
                     root: AddressRoot::Git(GitAddress {
                         url,
@@ -250,6 +280,7 @@ pub(crate) struct GitAddress {
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
+    pub(crate) name: String,
     pub(crate) state_root: RelativePathBuf,
     pub(crate) state_path: RelativePathBuf,
     pub(crate) resolve_root: Utf8PathBuf,
@@ -264,6 +295,7 @@ impl State {
             .or(self.address.clone());
 
         Self {
+
             state_path: other
                 .state_path
                 .map(Into::into)
@@ -325,7 +357,7 @@ fn converge_state(state: &State) -> Result<State, StateError> {
 
 /// Parse a repo URL to extract a "name" from it, as well as encode the part before the name to still uniquely
 /// identify it. Only supports forward slashes as path seperator.
-pub(crate) fn parse_url_repo_name(url: &str) -> Result<String, AddressError> {
+pub(crate) fn parse_url_name(url: &str) -> Result<String, AddressError> {
     let url = url.strip_suffix('/').unwrap_or(url).to_owned();
     // We want the final part, after the slash, as the "file name"
     let split_parts: Vec<&str> = url.split('/').collect();
@@ -409,12 +441,16 @@ pub(crate) fn create_resolve_state(
         .ok_or_else(|| StateErrorKind::InvalidRoot(state.resolve_root.to_string()))
         .to_state_err("Getting context name from context root path for new state.".to_owned())?;
 
-    Ok(ResolveState {
+    let resolve_state = ResolveState {
         state_root: state.state_root.to_utf8_path(&state.resolve_root),
         state_path: state.state_path,
         resolve_root: state.resolve_root,
         name,
         sub: "tidploy_root".to_owned(),
         hash: "todo_hash".to_owned(),
-    })
+    };
+
+    debug!("Created resolve state as {:?}", resolve_state);
+
+    Ok(resolve_state)
 }
