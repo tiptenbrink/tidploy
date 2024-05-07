@@ -3,8 +3,6 @@ use std::io::Error as IOError;
 use thiserror::Error as ThisError;
 use tracing_error::TracedError;
 
-// use crate::filesystem::RelativePathError;
-
 #[derive(ThisError, Debug)]
 pub(crate) enum SecretError {
     #[error("Failed to get password from prompt! {0}")]
@@ -46,8 +44,6 @@ pub(crate) enum StateErrorKind {
     Config(#[from] ConfigError),
     #[error("{0}")]
     Address(#[from] AddressError),
-    // #[error("{0}")]
-    // RelativePath(#[from] RelativePathError)
 }
 
 pub trait WrapStateErr<T, E> {

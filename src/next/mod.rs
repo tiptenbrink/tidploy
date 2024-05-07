@@ -1,7 +1,6 @@
 pub mod api;
 pub(crate) mod commands;
 pub(crate) mod config;
-pub(crate) mod deploy;
 pub(crate) mod errors;
 pub(crate) mod fs;
 pub(crate) mod git;

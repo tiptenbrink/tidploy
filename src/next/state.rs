@@ -87,135 +87,6 @@ impl AddressIn {
     }
 }
 
-// #[derive(Default, Debug)]
-// pub(crate) struct StateIn {
-//     pub(crate) context: InferContext,
-//     pub(crate) resolve_root: Option<String>,
-//     pub(crate) state_path: Option<String>,
-//     pub(crate) state_root: Option<String>,
-// }
-
-// impl StateIn {
-//     pub(crate) fn from_args(
-//         cwd_context: bool,
-//         resolve_root: Option<String>,
-//         state_path: Option<String>,
-//         state_root: Option<String>,
-//     ) -> Self {
-//         let context = if cwd_context {
-//             InferContext::Cwd
-//         } else {
-//             InferContext::Git
-//         };
-
-//         Self {
-//             context,
-//             resolve_root,
-//             state_path,
-//             state_root,
-//         }
-//     }
-// }
-
-// #[derive(Debug)]
-// pub(crate) struct StatePaths {
-//     pub(crate) resolve_root: Utf8PathBuf,
-//     pub(crate) state_root: RelativePathBuf,
-//     pub(crate) state_path: RelativePathBuf,
-// }
-
-// /// This gets the initial resolve root to bootstrap the entire process. There are two contexts. The first
-// /// is the "Cwd" or current working directory context. The second is the Git context.
-// /// Cwd: if you give a relative path, it will be relative to the current path; absolute path it will just be that path
-// /// Git: if you give a relative path, it will be relative to the Git dir; absolute path it will ERROR
-// fn get_initial_resolve_root(resolve_root_option: Option<String>, context: InferContext) -> Result<Utf8PathBuf, StateError> {
-//     let current_dir = get_current_dir()?;
-//     let resolve_root_path = resolve_root_option.map(Utf8PathBuf::from);
-//     let resolve_root = resolve_root_path.unwrap_or_default();
-//     let resolve_root_rel = RelativePathBuf::from_path(&resolve_root).ok();
-
-//     let resolve_root = match context {
-//         InferContext::Cwd => match resolve_root_rel {
-//             Some(resolve_root_rel) => resolve_root_rel.to_utf8_path(&current_dir),
-//             None => resolve_root,
-//         },
-//         InferContext::Git => {
-//             let git_dir = Utf8PathBuf::from(
-//                 git_root_dir(&current_dir)
-//                     .to_state_err("Getting Git root dir for new StatePaths".to_owned())?,
-//             );
-//             match resolve_root_rel {
-//                 Some(resolve_root_rel) => resolve_root_rel.to_utf8_path(&git_dir),
-//                 None => return Err(StateError {
-//                     msg: "Cannot set initial resolve root to absolute path when using Git context".to_owned(),
-//                     source: StateErrorKind::NoAbsoluteGit.into()
-//                 }),
-//             }
-//         }
-//     };
-
-//     Ok(resolve_root)
-// }
-
-// impl StatePaths {
-//     /// Creates a StatePaths struct with the context root set to the current directory. The executable
-//     /// is set to a default of "entrypoint.sh".
-//     pub(crate) fn new(state_in: StateIn) -> Result<Self, StateError> {
-//         let current_dir =
-//             current_dir().to_state_err("Getting current dir for new StatePaths".to_owned())?;
-//         let current_dir = Utf8PathBuf::from_path_buf(current_dir).map_err(|_e| StateError {
-//             msg: "Current directory is not valid UTF-8!".to_owned(),
-//             source: StateErrorKind::InvalidPath.into(),
-//         })?;
-//         let resolve_root_path = state_in.resolve_root.map(Utf8PathBuf::from);
-//         let resolve_root = resolve_root_path.unwrap_or_default();
-//         let resolve_root_rel = RelativePathBuf::from_path(&resolve_root).ok();
-
-//         let resolve_root = match state_in.context {
-//             InferContext::Cwd => match resolve_root_rel {
-//                 Some(resolve_root_rel) => resolve_root_rel.to_utf8_path(&current_dir),
-//                 None => resolve_root,
-//             },
-//             InferContext::Git => {
-//                 let git_dir = Utf8PathBuf::from(
-//                     git_root_dir(&current_dir)
-//                         .to_state_err("Getting Git root dir for new StatePaths".to_owned())?,
-//                 );
-//                 match resolve_root_rel {
-//                     Some(resolve_root_rel) => resolve_root_rel.to_utf8_path(&git_dir),
-//                     None => git_dir,
-//                 }
-//             }
-//         };
-
-//         // let resolve_root_path = state_in
-//         //     .resolve_root
-//         //     .map(|s| Utf8PathBuf::from(s))
-//         //     .unwrap_or_default();
-//         // resolve_root_rel.is_relative()
-//         // let resolve_root_rel = state_in
-//         //     .resolve_root
-//         //     .map(|s| RelativePathBuf::from(s))
-//         //     .unwrap_or_default();
-//         // let resolve_root = (&resolve_root_rel).to_path_canon_checked(&context_root)
-//         //     .to_state_err(format!("Error interpreting resolve_root {} as relative to the context_root {}", &resolve_root_rel, &context_root))?;
-//         let state_root = state_in
-//             .state_root
-//             .map(RelativePathBuf::from)
-//             .unwrap_or_default();
-//         let state_path = state_in
-//             .state_path
-//             .map(RelativePathBuf::from)
-//             .unwrap_or_default();
-
-//         Ok(StatePaths {
-//             resolve_root,
-//             state_path,
-//             state_root,
-//         })
-//     }
-// }
-
 /// Parses the list of strings given and interprets them as each pair of two being a secret key and target
 /// env name.
 pub(crate) fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
@@ -385,27 +256,7 @@ pub(crate) struct State {
     pub(crate) address: Option<Address>,
 }
 
-// impl From<StatePaths> for State {
-//     fn from(value: StatePaths) -> Self {
-//         State {
-//             state_path: value.state_path,
-//             state_root: value.state_root,
-//             resolve_root: value.resolve_root,
-//             address: None,
-//         }
-//     }
-// }
-
 impl State {
-    // fn merge(self, other: Self) -> Self {
-    //     Self {
-    //         state_path: other.state_path,
-    //         state_root: other.state_root,
-    //         context_root: other.context_root,
-    //         address: other.address.or(self.address)
-    //     }
-    // }
-
     fn merge_config(&self, other: StateConfig) -> Self {
         let address = other
             .address
@@ -518,14 +369,6 @@ fn resolve_address(address: Address, store_dir: &Utf8Path) -> Result<State, Stat
     }
 }
 
-// fn set_current_dir(resolve_root: &Utf8Path) -> Result<(), StateError> {
-//     debug!("Setting current dir to resolve root {}", resolve_root);
-
-//     env::set_current_dir(resolve_root).to_state_err(format!("Failed to set current dir to context root {}", resolve_root))?;
-
-//     Ok(())
-// }
-
 pub(crate) struct StateOptions {
     pub(crate) store_dir: Utf8PathBuf,
 }
@@ -550,14 +393,6 @@ pub(crate) fn converge_address(address: Address, opt: StateOptions) -> Result<St
 
     Ok(state)
 }
-
-// #[instrument(name = "state", level = "debug", skip_all)]
-// pub(crate) fn resolve_from_base_state(
-//     mut state: State,
-//     opt: StateOptions,
-// ) -> Result<ResolveState, StateError> {
-
-// }
 
 pub(crate) fn create_resolve_state(
     addr_in: AddressIn,

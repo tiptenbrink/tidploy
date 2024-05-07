@@ -10,24 +10,6 @@ pub struct NextSub {
     #[clap(subcommand)]
     pub subcommand: NextCommands,
 
-    // /// Contexts other than git-remote (default) are not fully supported.
-    // #[arg(long, value_enum, global = true)]
-    // context: Option<StateContext>,
-
-    // /// Set the repository URL, defaults to 'default_infer', in which case it is inferred from the current repository.
-    // /// Set to 'default' to not set it.
-    // /// Falls back to environment variable using TIDPLOY_REPO and then to config with key 'repo_url'
-    // /// For infering, it looks at the URL set to the 'origin' remote.
-    // #[arg(short, long, global = true)]
-    // repo: Option<String>,
-
-    // /// The git reference (commit or tag) to use.
-    // #[arg(short, long, global = true)]
-    // tag: Option<String>,
-
-    // /// The path inside the repository that should be used as the primary config source.
-    // #[arg(short, long, global = true)]
-    // deploy_pth: Option<String>,
     /// Directory to start resolving from. Can either be an absolute path (this requires --cwd), or relative to
     /// the current directory or Git root dir
     #[arg(long = "resolve-root")]
@@ -96,19 +78,6 @@ pub enum NextCommands {
         #[arg(long = "repo")]
         repo: Option<String>,
     },
-    // Address {
-    //     /// Location relative to resolve root where you want to begin reading configs. Defaults to be equal
-    //     /// to resolve root.
-    //     #[arg(long = "a-state-root")]
-    //     address_state_root: Option<String>,
-
-    //     /// Location relative to state root to stop reading configs, inclusive.
-    //     #[arg(long = "a-state-path")]
-    //     address_state_path: Option<String>,
-
-    //     #[clap(subcommand)]
-    //     subcommand: AddressSubCommands,
-    // }
 }
 
 #[derive(Subcommand, Debug)]
@@ -161,7 +130,6 @@ pub fn match_command(next_sub: NextSub, _cmd: Command) -> Result<ExitCode, Repor
                 execution_path,
                 variables,
             )?;
-            // If [process::ExitCode::from_raw] gets stabilized this can be simplified
             let code = u8::try_from(out.exit.code().unwrap_or(0))?;
 
             Ok(ExitCode::from(code))
@@ -190,38 +158,5 @@ pub fn match_command(next_sub: NextSub, _cmd: Command) -> Result<ExitCode, Repor
 
             Ok(ExitCode::from(code))
         }
-        // NextCommands::Address {
-        //     address_state_root,
-        //     address_state_path,
-        //     subcommand: addr_subcommands } => match addr_subcommands {
-        //         AddressSubCommands::Git {
-        //             url,
-        //             git_ref,
-        //             target_path
-        //         } => {
-        //             let addr_in = AddressIn::Git {
-        //                 url,
-        //                 git_ref,
-        //                 target_path,
-        //                 state_path: address_state_path,
-        //                 state_root: address_state_root
-        //             };
-
-        //             let state_in = StateIn::from_args(true, resolve_root, state_path, state_root);
-
-        //             Ok(())
-        //         },
-        //         AddressSubCommands::Local { path } => {
-        //             let addr_in = AddressIn::Local {
-        //                 path,
-        //                 state_path: address_state_path,
-        //                 state_root: address_state_root
-        //             };
-
-        //             let state_in = StateIn::from_args(true, resolve_root, state_path, state_root);
-
-        //             Ok(())
-        //         },
-        //     }
     }
 }

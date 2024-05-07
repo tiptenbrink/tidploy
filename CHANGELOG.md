@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.0 2024-05-07
+
+* Address system is now used to replace StateIn/StatePaths, deploy now also works similar to before
+* A lot of the arguments for the CLI have been changed, so incompatible with 0.14. From now on follows the route to stabilization, as we are basically feature-complete
+
 ## 0.14.0 2024-05-05
 
 * Very large update that includes a complete rewrite, currently gated behind `tidploy next`. v1 should hopefully make this the default.

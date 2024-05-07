@@ -55,17 +55,6 @@ impl GlobalArguments {
     // }
 }
 
-// impl From<GlobalArguments> for AddressIn {
-//     fn from(value: GlobalArguments) -> Self {
-//         Self::from_args(
-//             value.cwd_context,
-//             value.resolve_root,
-//             value.state_path,
-//             value.state_root,
-//         )
-//     }
-// }
-
 impl From<GlobalArguments> for StateOptions {
     fn from(value: GlobalArguments) -> Self {
         let default = Self::default();

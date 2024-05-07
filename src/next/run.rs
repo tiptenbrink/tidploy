@@ -85,8 +85,6 @@ pub(crate) fn run_command_input_old_state(
     )
     .wrap_err("Create state error.")?;
 
-    // let state = extra_envs(state);
-
     let relative_path = RelativePathBuf::from(&state.exe_name);
     let exe_path = relative_path.to_utf8_path(state.deploy_dir());
     run_entrypoint(&state.deploy_dir(), &exe_path, state.envs, input_bytes)
@@ -136,8 +134,6 @@ pub(crate) fn run_unit_input(
     run_resolved: RunResolved,
     input_bytes: Option<Vec<u8>>,
 ) -> Result<EntrypointOut, Report> {
-    //debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
-
     let secret_vars = secret_vars_to_envs(&run_resolved.scope, run_resolved.envs)?;
 
     run_entrypoint(
@@ -147,71 +143,3 @@ pub(crate) fn run_unit_input(
         input_bytes,
     )
 }
-
-// #[instrument(name = "address", level = "debug", skip_all)]
-// pub(crate) fn address_command(
-//     state_in: StateIn,
-//     address_in: AddressIn
-// ) -> Result<EntrypointOut, Report> {
-//     debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
-
-//     let resolve_state = resolve_from_base_state(state, state_options.unwrap_or_default())?;
-
-//     let run_resolved = merge_and_resolve(run_args, resolve_state)?;
-
-//     run_unit_input(run_resolved, input_bytes)
-// }
-
-// #[instrument(name = "deploy", level = "debug", skip_all)]
-// pub(crate) fn deploy_command(
-//     state_in: StateIn,
-//     state_options: Option<StateOptions>,
-//     address: Option<Address>,
-//     service: Option<String>,
-//     executable: Option<String>,
-//     execution_path: Option<String>,
-//     variables: Vec<String>,
-//     input_bytes: Option<Vec<u8>>,
-// ) -> Result<EntrypointOut, Report> {
-//     debug!("Run command called with in_state {:?}, executable {:?}, variables {:?} and input_bytes {:?}", state_in, executable, variables, input_bytes);
-
-//     let scope_args = SecretScopeArguments {
-//         service,
-//         ..Default::default()
-//     };
-//     let run_args = RunArguments {
-//         executable,
-//         execution_path,
-//         envs: parse_cli_vars(variables),
-//         scope_args,
-//     };
-//     let paths = StatePaths::new(state_in)?;
-
-//     // // Either provide address, or give none (then it's inferred)
-//     // let address = match address {
-//     //     None => {
-//     //         let url = git_root_origin_url(&paths.resolve_root)?;
-
-//     //         Address {
-//     //             root: AddressRoot::Git(GitAddress {
-//     //                 url,
-//     //                 git_ref: "HEAD".to_owned(),
-//     //                 path: RelativePathBuf::new()
-
-//     //             }), state_root: RelativePathBuf::new(), state_path: RelativePathBuf::new()
-//     //         }
-//     //     },
-//     //     Some(address) => address
-//     // };
-
-//     let state = State {
-//         address: Some(address),
-//         ..State::from(paths)
-//     };
-
-//     let resolve_state = resolve_from_base_state(state, state_options.unwrap_or_default())?;
-
-//     let run_resolved = merge_and_resolve(run_args, resolve_state)?;
-
-//     run_unit_input(run_resolved, input_bytes)
-// }
