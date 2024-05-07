@@ -47,18 +47,18 @@ pub(crate) enum StateErrorKind {
 }
 
 pub(crate) trait WrapStateErr<T, E> {
-    fn to_state_err(self, msg: String) -> Result<T, StateError>;
+    fn to_state_err<S: Into<String>>(self, msg: S) -> Result<T, StateError>;
 }
 
 impl<T, E> WrapStateErr<T, E> for Result<T, E>
 where
     E: Into<StateErrorKind> + Send + Sync + 'static,
 {
-    fn to_state_err(self, msg: String) -> Result<T, StateError> {
+    fn to_state_err<S: Into<String>>(self, msg: S) -> Result<T, StateError> {
         match self {
             Ok(t) => Ok(t),
             Err(e) => Err(StateError {
-                msg,
+                msg: msg.into(),
                 source: e.into().into(),
             }),
         }

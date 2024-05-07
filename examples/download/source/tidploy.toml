@@ -1,4 +1,5 @@
 [state.address]
-url = ""
+url = "."
+local = true
 git_ref = "HEAD"
 target_path = "examples/download/target"

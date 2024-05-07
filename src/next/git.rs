@@ -11,7 +11,7 @@ use crate::{
 use super::{
     errors::{GitError, GitProcessError, StateError},
     process::process_complete_output,
-    state::{parse_url_repo_name, GitAddress, State},
+    state::{parse_url_name, GitAddress, State},
 };
 use core::fmt::Debug;
 use std::{
@@ -44,11 +44,11 @@ fn run_git<S: AsRef<OsStr> + Debug>(
     }
 }
 
-// pub(crate) fn git_root_dir(path: &Utf8Path) -> Result<String, GitError> {
-//     let args = vec!["rev-parse", "--show-toplevel"];
+pub(crate) fn git_root_dir(path: &Utf8Path) -> Result<String, GitError> {
+    let args = vec!["rev-parse", "--show-toplevel"];
 
-//     run_git(path, args, "get git root dir")
-// }
+    run_git(path, args, "get git root dir")
+}
 
 pub(crate) fn repo_clone(
     current_dir: &Utf8Path,
@@ -136,7 +136,7 @@ pub(crate) fn ls_remote(repo_dir: &Utf8Path, pattern: &str) -> Result<String, Gi
 
     let split = out.trim().split('\n');
     let lines: Vec<&str> = split.collect();
-    let sha_refs = lines
+    let mut sha_refs = lines
         .into_iter()
         .map(|s| {
             let spl: Vec<&str> = s.split_whitespace().collect();
@@ -153,6 +153,11 @@ pub(crate) fn ls_remote(repo_dir: &Utf8Path, pattern: &str) -> Result<String, Gi
             Ok(ShaRef { sha, tag })
         })
         .collect::<Result<Vec<ShaRef>, GitError>>()?;
+    sha_refs
+        .retain(|sr| {
+            // We don't care about the remotes of our remote
+            !(*sr.tag).contains("refs/remotes")
+        });
 
     let commit = if sha_refs.is_empty() {
         pattern
@@ -229,14 +234,20 @@ pub(crate) fn get_dir_from_git(
     state_root: &RelativePath,
     store_dir: &Utf8Path,
 ) -> Result<State, StateError> {
-    let encoded_url = hash_last_n(&address.url, 8);
-    let name = parse_url_repo_name(&address.url)
+    let url = if address.local {
+        git_root_dir(Utf8Path::new(&address.url)).to_state_err("Failed to get Git directory from local URL.")?
+    } else {
+        address.url
+    };
+
+    let encoded_url = hash_last_n(&url, 8);
+    let name = parse_url_name(&url)
         .to_state_err("Error passing Git url for determining name.".to_owned())?;
     let dir_name = format!("{}_{}", name, encoded_url);
 
     let target_dir = store_dir.join(&dir_name);
     if !target_dir.exists() {
-        repo_clone(store_dir, &dir_name, &address.url)
+        repo_clone(store_dir, &dir_name, &url)
             .to_state_err("Error cloning repository in address.".to_owned())?;
     }
 
@@ -272,6 +283,7 @@ pub(crate) fn get_dir_from_git(
     }
 
     Ok(State {
+        name,
         resolve_root: address.path.to_utf8_path(&commit_path),
         state_root: state_root.to_owned(),
         state_path: state_path.to_owned(),

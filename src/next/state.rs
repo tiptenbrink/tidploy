@@ -154,12 +154,14 @@ impl Address {
                 state_path,
                 state_root,
             } => {
-                let url = url_local(url, local.unwrap_or_default(), resolve_root);
-                let name = parse_url_name(&url)?;
+                let local = local.unwrap_or_default();
+                let url = url_local(url, local, resolve_root);
+                let name = parse_url_name(&url).to_state_err("Cannot get name from url.")?;
                 Address {
                     name,
                     root: AddressRoot::Git(GitAddress {
                         url,
+                        local,
                         git_ref,
                         path: RelativePathBuf::from(target_path.unwrap_or_default()),
                     }),
@@ -180,7 +182,7 @@ impl Address {
                     address_root
                 };
 
-                let name = parse_url_name(root.as_str()).to_state_err("Error getting name from address root!".to_owned())?;
+                let name = parse_url_name(root.as_str()).to_state_err("Error getting name from address root!")?;
 
                 Address {
                     name,
@@ -213,17 +215,19 @@ impl Address {
                 } else {
                     match infer_ctx {
                         InferContext::Git => git_root_origin_url(&current_dir)
-                            .to_state_err("Error resolving current Git repository.".to_owned())?,
+                            .to_state_err("Error resolving current Git repository.")?,
                         InferContext::Cwd => current_dir.to_string(),
                     }
 
                     // If you want to start with a Git repo but use a different resolve root and not give the URL
                     // Just start in a different directory!
                 };
-                let name = 
+                let name = parse_url_name(&url).to_state_err("Cannot get name from url.")?;
                 Address {
+                    name,
                     root: AddressRoot::Git(GitAddress {
                         url,
+                        local,
                         git_ref: git_ref.unwrap_or_else(|| "HEAD".to_owned()),
                         path: RelativePathBuf::from(target_resolve_root.unwrap_or_default()),
                     }),
@@ -256,8 +260,10 @@ impl Address {
                     }
                     None => resolve_root,
                 };
-
+                let name = parse_url_name(resolve_root.as_str())
+                    .to_state_err("Cannot get name from resolve root.")?;
                 Address {
+                    name,
                     root: AddressRoot::Local(resolve_root),
                     state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
                     state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
@@ -274,6 +280,7 @@ impl Address {
 #[derive(Debug, Clone)]
 pub(crate) struct GitAddress {
     pub(crate) url: String,
+    pub(crate) local: bool,
     pub(crate) git_ref: String,
     pub(crate) path: RelativePathBuf,
 }
@@ -288,14 +295,14 @@ pub(crate) struct State {
 }
 
 impl State {
-    fn merge_config(&self, other: StateConfig) -> Self {
+    fn merge_config(&self, other: StateConfig) -> Result<Self, StateError> {
         let address = other
             .address
             .map(|a| Address::from_config_addr(a, &self.resolve_root))
-            .or(self.address.clone());
+            .transpose()?.or(self.address.clone());
 
-        Self {
-
+        let state = Self {
+            name: self.name.clone(),
             state_path: other
                 .state_path
                 .map(Into::into)
@@ -306,7 +313,9 @@ impl State {
                 .unwrap_or(self.state_root.clone()),
             resolve_root: self.resolve_root.clone(),
             address,
-        }
+        };
+
+        Ok(state)
     }
 
     /// Checks if a state is different to another one for the purposes of converging to a state.
@@ -334,9 +343,9 @@ fn converge_state(state: &State) -> Result<State, StateError> {
     let iter = loop {
         let state_root_path = state.state_root.to_utf8_path(&state.resolve_root);
         let config = traverse_configs(&state_root_path, &state.state_path)
-            .to_state_err("Failed to read configs for determining new state.".to_owned())?;
+            .to_state_err("Failed to read configs for determining new state.")?;
         let new_state = if let Some(config_state) = config.state {
-            state.merge_config(config_state)
+            state.merge_config(config_state)?
         } else {
             break i + 1;
         };
@@ -384,15 +393,20 @@ pub(crate) fn parse_url_name(url: &str) -> Result<String, AddressError> {
 }
 
 fn resolve_address(address: Address, store_dir: &Utf8Path) -> Result<State, StateError> {
+    debug!("Resolving address {:?}", address);
+    
     let Address {
+        name,
         state_path,
         state_root,
         root,
     } = address;
+    
 
     match root {
         AddressRoot::Git(addr) => get_dir_from_git(addr, &state_path, &state_root, store_dir),
         AddressRoot::Local(path) => Ok(State {
+            name,
             resolve_root: path,
             state_path,
             state_root,
@@ -439,7 +453,7 @@ pub(crate) fn create_resolve_state(
         .file_name()
         .map(|s| s.to_string())
         .ok_or_else(|| StateErrorKind::InvalidRoot(state.resolve_root.to_string()))
-        .to_state_err("Getting context name from context root path for new state.".to_owned())?;
+        .to_state_err("Getting context name from context root path for new state.")?;
 
     let resolve_state = ResolveState {
         state_root: state.state_root.to_utf8_path(&state.resolve_root),
