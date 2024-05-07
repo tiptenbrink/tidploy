@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.16.0
+## 0.15.1
 
-*
+* Local git cloning now works as it should
 
 ## 0.15.0 2024-05-07
 
