@@ -1,0 +1,1 @@
+Instead of a local path, you can also deploy from a (remote) Git repository. This will download only the parts of the repository you need (using modern Git features such as partial clones and sparse checkout) in an isolated location.
