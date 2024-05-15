@@ -448,18 +448,20 @@ pub(crate) fn create_resolve_state(
     let address = Address::from_addr_in(addr_in, infer_ctx)?;
     let state = converge_address(address, opt)?;
 
-    let name = state
-        .resolve_root
-        .file_name()
-        .map(|s| s.to_string())
-        .ok_or_else(|| StateErrorKind::InvalidRoot(state.resolve_root.to_string()))
-        .to_state_err("Getting context name from context root path for new state.")?;
+    
+
+    // let name = state
+    //     .resolve_root
+    //     .file_name()
+    //     .map(|s| s.to_string())
+    //     .ok_or_else(|| StateErrorKind::InvalidRoot(state.resolve_root.to_string()))
+    //     .to_state_err("Getting context name from context root path for new state.")?;
 
     let resolve_state = ResolveState {
         state_root: state.state_root.to_utf8_path(&state.resolve_root),
         state_path: state.state_path,
         resolve_root: state.resolve_root,
-        name,
+        name: state.name,
         sub: "tidploy_root".to_owned(),
         hash: "todo_hash".to_owned(),
     };
