@@ -16,8 +16,8 @@ use super::{
 use core::fmt::Debug;
 use std::{
     ffi::OsStr,
-    fs::{self, create_dir_all, remove_dir_all},
-    io::{self},
+    fs::{self, create_dir_all, remove_dir_all, File},
+    io::{self, Write},
     path::Path,
 };
 
@@ -249,6 +249,12 @@ pub(crate) fn get_dir_from_git(
     if !target_dir.exists() {
         repo_clone(store_dir, &dir_name, &url)
             .to_state_err("Error cloning repository in address.".to_owned())?;
+        let meta_filename = format!("tidploy_repo_meta_{}", &dir_name);
+        let mut file = File::create(target_dir.join(&meta_filename))
+            .to_state_err("Failed to create metadata file!")?;
+        let metadata = format!("url:{}\nname:{}", &url, &name);
+        file.write_all(metadata.as_bytes())
+            .to_state_err("Failed to write to metadatafile!")?;
     }
 
     let commit = ls_remote(&target_dir, &address.git_ref)
@@ -266,8 +272,8 @@ pub(crate) fn get_dir_from_git(
     let encoded_paths = hash_last_n(&paths_name, 8);
     let commit_path = commit_dir
         .join(&dir_name)
-        .join(commit_short)
-        .join(encoded_paths);
+        .join(&commit_short)
+        .join(&encoded_paths);
 
     if !commit_path.exists() {
         git_fetch(&target_dir)
@@ -280,6 +286,12 @@ pub(crate) fn get_dir_from_git(
             .to_state_err("Error setting new paths for sparse checkout.".to_owned())?;
         remove_dir_all(commit_path.join(".git"))
             .to_state_err("Error removing .git directory.".to_owned())?;
+        let meta_filename = format!("tidploy_deploy_meta_{}_{}", &commit_short, &encoded_paths);
+        let mut file = File::create(commit_path.join(&meta_filename))
+            .to_state_err("Failed to create metadata file!")?;
+        let metadata = format!("commit:{}\npaths:{}", &commit, &paths_name);
+        file.write_all(metadata.as_bytes())
+            .to_state_err("Failed to write to metadatafile!")?;
     }
 
     Ok(State {
