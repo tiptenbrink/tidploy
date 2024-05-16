@@ -1,0 +1,3 @@
+[argument]
+executable = "example_here.sh"
+execution_path = "."

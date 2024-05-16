@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.15.1
+## 0.16.0 2024-05-16
 
+* Significant refactor of how resolving works for run/deploy (secrets still needs to be changed). "state_root" no longer exists. An address always contains a target path, which is the state path. This state path is also what will be used to resolve the config. State resolution is no longer first merged and then resolved, but resolved only at the state path location. Argument resolution happens from the resolve root to the state path. The biggest change here is that relative paths in `tidploy.toml` are now resolved relative to themselves and not relative to the (unknown) resolve root, as this is a more natural API. This is also more similar to how things worked pre-0.14. However, execution path still defaults to the resolve root, but this can be modified by adding `execution_path = "."`.
 * Local git cloning now works as it should
 
 ## 0.15.0 2024-05-07

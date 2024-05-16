@@ -180,6 +180,26 @@ fn test_git_download() -> Result<(), CommandError> {
     Ok(())
 }
 
+#[test]
+fn test_run_execution_path() -> Result<(), CommandError> {
+    let mut global_args = GlobalArguments::default();
+    let args = RunArguments::default();
+    //global_args.context = Some(StateContext::None);
+    let address_local = LocalAddressIn {
+        resolve_root: Some("examples/config".to_owned()),
+        state_path: Some("run_here".to_owned()),
+        ..Default::default()
+    };
+    global_args.address = Some(AddressIn::Local(address_local));
+
+    let output = run_command(global_args, args)?;
+    assert!(output.exit.success());
+
+    assert_eq!("Also here!\n", output.out);
+
+    Ok(())
+}
+
 // #[test]
 // fn test_archive() -> Result<(), CommandError> {
 //     let global_args = GlobalArguments::default();
