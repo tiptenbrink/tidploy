@@ -1,0 +1,5 @@
+[state.address]
+path = "."
+
+[argument]
+executable = "alternate.sh"

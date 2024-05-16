@@ -34,8 +34,8 @@ pub(crate) enum StateErrorKind {
     InvalidPath,
     #[error("State manipulation failed due to IO error! {0}")]
     IO(#[from] IOError),
-    #[error("{0}")]
-    InvalidRoot(String),
+    // #[error("{0}")]
+    // InvalidRoot(String),
     #[error("{0}")]
     Secret(#[from] SecretError),
     #[error("{0}")]

@@ -14,10 +14,9 @@ pub struct NextSub {
     /// the current directory or Git root dir
     #[arg(long = "resolve-root")]
     resolve_root: Option<String>,
-
-    /// Location relative to state root to stop reading configs, inclusive.
-    #[arg(long = "state-root")]
-    state_root: Option<String>,
+    // /// Location relative to state root to stop reading configs, inclusive.
+    // #[arg(long = "state-root")]
+    // state_root: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -79,7 +78,7 @@ pub enum NextCommands {
         repo: Option<String>,
 
         #[arg(long = "local")]
-        local: bool
+        local: bool,
     },
 }
 
@@ -101,7 +100,6 @@ pub enum AddressSubCommands {
 pub fn match_command(next_sub: NextSub, _cmd: Command) -> Result<ExitCode, Report> {
     let NextSub {
         subcommand,
-        state_root,
         resolve_root,
     } = next_sub;
 
@@ -111,7 +109,7 @@ pub fn match_command(next_sub: NextSub, _cmd: Command) -> Result<ExitCode, Repor
             cwd_infer,
             state_path,
         } => {
-            let addr_in = AddressIn::from_secret(resolve_root, state_path, state_root);
+            let addr_in = AddressIn::from_secret(resolve_root, state_path);
 
             secret_command(addr_in, cwd_infer, None, None, key, None)?;
 
@@ -124,7 +122,7 @@ pub fn match_command(next_sub: NextSub, _cmd: Command) -> Result<ExitCode, Repor
             git_infer,
             state_path,
         } => {
-            let addr_in = AddressIn::from_run(resolve_root, state_path, state_root);
+            let addr_in = AddressIn::from_run(resolve_root, state_path);
             let out = run_command(
                 addr_in,
                 git_infer,
@@ -147,8 +145,7 @@ pub fn match_command(next_sub: NextSub, _cmd: Command) -> Result<ExitCode, Repor
             git_ref,
             state_path,
         } => {
-            let addr_in =
-                AddressIn::from_deploy(repo, local, git_ref, resolve_root, state_path, state_root);
+            let addr_in = AddressIn::from_deploy(repo, local, git_ref, resolve_root, state_path);
             let out = run_command(
                 addr_in,
                 !cwd_infer,

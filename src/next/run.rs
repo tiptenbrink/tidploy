@@ -6,7 +6,7 @@ use crate::{
     archives::extract_archive,
     filesystem::{get_dirs, WrapToPath},
     next::{
-        resolve::{merge_and_resolve, RunArguments, SecretScopeArguments},
+        resolve::{resolve_run, Resolved, RunArguments, SecretScopeArguments},
         secrets::secret_vars_to_envs,
         state::{create_resolve_state, parse_cli_vars, InferContext},
     },
@@ -111,12 +111,6 @@ pub(crate) fn run_command_input(
         service: run_options.service,
         ..Default::default()
     };
-    let run_args = RunArguments {
-        executable,
-        execution_path,
-        envs: parse_cli_vars(variables),
-        scope_args,
-    };
     let infer_ctx = if git_infer {
         InferContext::Git
     } else {
@@ -124,8 +118,14 @@ pub(crate) fn run_command_input(
     };
     let resolve_state =
         create_resolve_state(addr_in, infer_ctx, state_options.unwrap_or_default())?;
+    let run_args = RunArguments {
+        executable: executable.resolve(&resolve_state.resolve_root),
+        execution_path: execution_path.resolve(&resolve_state.resolve_root),
+        envs: parse_cli_vars(variables),
+        scope_args,
+    };
 
-    let run_resolved = merge_and_resolve(run_args, resolve_state)?;
+    let run_resolved = resolve_run(resolve_state, run_args)?;
 
     run_unit_input(run_resolved, run_options.input_bytes)
 }

@@ -1,5 +1,5 @@
 use camino::Utf8Path;
-use relative_path::RelativePath;
+use relative_path::RelativePathBuf;
 use spinoff::{spinners, Spinner};
 use tracing::debug;
 
@@ -11,7 +11,7 @@ use crate::{
 use super::{
     errors::{GitError, GitProcessError, StateError},
     process::process_complete_output,
-    state::{parse_url_name, GitAddress, State},
+    state::{parse_url_name, GitAddress, State, StateStep},
 };
 use core::fmt::Debug;
 use std::{
@@ -153,11 +153,10 @@ pub(crate) fn ls_remote(repo_dir: &Utf8Path, pattern: &str) -> Result<String, Gi
             Ok(ShaRef { sha, tag })
         })
         .collect::<Result<Vec<ShaRef>, GitError>>()?;
-    sha_refs
-        .retain(|sr| {
-            // We don't care about the remotes of our remote
-            !(*sr.tag).contains("refs/remotes")
-        });
+    sha_refs.retain(|sr| {
+        // We don't care about the remotes of our remote
+        !(*sr.tag).contains("refs/remotes")
+    });
 
     let commit = if sha_refs.is_empty() {
         pattern
@@ -230,12 +229,13 @@ fn str_last_n(input: &str, n: usize) -> &str {
 
 pub(crate) fn get_dir_from_git(
     address: GitAddress,
-    state_path: &RelativePath,
-    state_root: &RelativePath,
+    state_path: RelativePathBuf,
+    // state_root: &RelativePath,
     store_dir: &Utf8Path,
 ) -> Result<State, StateError> {
     let url = if address.local {
-        git_root_dir(Utf8Path::new(&address.url)).to_state_err("Failed to get Git directory from local URL.")?
+        git_root_dir(Utf8Path::new(&address.url))
+            .to_state_err("Failed to get Git directory from local URL.")?
     } else {
         address.url
     };
@@ -250,7 +250,7 @@ pub(crate) fn get_dir_from_git(
         repo_clone(store_dir, &dir_name, &url)
             .to_state_err("Error cloning repository in address.".to_owned())?;
         let meta_filename = format!("tidploy_repo_meta_{}", &dir_name);
-        let mut file = File::create(target_dir.join(&meta_filename))
+        let mut file = File::create(target_dir.join(meta_filename))
             .to_state_err("Failed to create metadata file!")?;
         let metadata = format!("url:{}\nname:{}", &url, &name);
         file.write_all(metadata.as_bytes())
@@ -262,17 +262,17 @@ pub(crate) fn get_dir_from_git(
     let commit_short = str_last_n(&commit, 10);
     let commit_dir = store_dir.join("c");
 
-    let state_root_git = address.path.join(state_root);
-    let state_path_git = state_root.join(state_path);
+    //let state_root_git = address.path.join(state_root);
+    let state_path_git = address.path.join(&state_path);
 
     // Paths might not exist, so always do this
-    let mut paths = vec![state_root_git.as_str(), state_path_git.as_str()];
+    let mut paths = vec![state_path_git.as_str()];
     paths.sort();
     let paths_name = paths.join("_");
     let encoded_paths = hash_last_n(&paths_name, 8);
     let commit_path = commit_dir
         .join(&dir_name)
-        .join(&commit_short)
+        .join(commit_short)
         .join(&encoded_paths);
 
     if !commit_path.exists() {
@@ -287,7 +287,7 @@ pub(crate) fn get_dir_from_git(
         remove_dir_all(commit_path.join(".git"))
             .to_state_err("Error removing .git directory.".to_owned())?;
         let meta_filename = format!("tidploy_deploy_meta_{}_{}", &commit_short, &encoded_paths);
-        let mut file = File::create(commit_path.join(&meta_filename))
+        let mut file = File::create(commit_path.join(meta_filename))
             .to_state_err("Failed to create metadata file!")?;
         let metadata = format!("commit:{}\npaths:{}", &commit, &paths_name);
         file.write_all(metadata.as_bytes())
@@ -297,9 +297,8 @@ pub(crate) fn get_dir_from_git(
     Ok(State {
         name,
         resolve_root: address.path.to_utf8_path(&commit_path),
-        state_root: state_root.to_owned(),
-        state_path: state_path.to_owned(),
-        address: None,
+        step: StateStep::Config,
+        state_path,
     })
 }
 

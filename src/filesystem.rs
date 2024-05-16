@@ -1,4 +1,4 @@
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
 use relative_path::{RelativePath, RelativePathBuf};
@@ -97,4 +97,53 @@ impl WrapToPath for RelativePathBuf {
     //         Ok(full_canon)
     //     }
     // }
+}
+
+pub trait PathClean {
+    fn clean(&self) -> Utf8PathBuf;
+}
+
+impl PathClean for Utf8Path {
+    fn clean(&self) -> Utf8PathBuf {
+        clean(self)
+    }
+}
+
+impl PathClean for Utf8PathBuf {
+    fn clean(&self) -> Utf8PathBuf {
+        clean(self)
+    }
+}
+
+/// From https://github.com/danreeves/path-clean/blob/3876d7cb5367997bcda17ce165bf69c4f434cb93/src/lib.rs
+/// By Dan Reeves, used under the Apache License 2.0
+/// Changed to work for Utf8Path
+pub fn clean<P>(path: P) -> Utf8PathBuf
+where
+    P: AsRef<Utf8Path>,
+{
+    let mut out = Vec::new();
+
+    for comp in path.as_ref().components() {
+        match comp {
+            Utf8Component::CurDir => (),
+            Utf8Component::ParentDir => match out.last() {
+                Some(Utf8Component::RootDir) => (),
+                Some(Utf8Component::Normal(_)) => {
+                    out.pop();
+                }
+                None
+                | Some(Utf8Component::CurDir)
+                | Some(Utf8Component::ParentDir)
+                | Some(Utf8Component::Prefix(_)) => out.push(comp),
+            },
+            comp => out.push(comp),
+        }
+    }
+
+    if !out.is_empty() {
+        out.iter().collect()
+    } else {
+        Utf8PathBuf::from(".")
+    }
 }

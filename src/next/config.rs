@@ -37,7 +37,8 @@ pub(crate) enum ConfigAddress {
     Local {
         path: String,
         state_path: Option<String>,
-        state_root: Option<String>,
+        // arg_root: Option<String>,
+        // arg_path: Option<String>,
     },
     Git {
         url: String,
@@ -45,14 +46,13 @@ pub(crate) enum ConfigAddress {
         git_ref: String,
         target_path: Option<String>,
         state_path: Option<String>,
-        state_root: Option<String>,
+        // arg_root: Option<String>,
+        // arg_path: Option<String>,
     },
 }
 
 #[derive(Deserialize, Debug)]
 pub(crate) struct StateConfig {
-    pub(crate) state_root: Option<String>,
-    pub(crate) state_path: Option<String>,
     pub(crate) address: Option<ConfigAddress>,
 }
 
@@ -92,6 +92,13 @@ pub(crate) fn load_dploy_config(config_dir_path: &Utf8Path) -> Result<Config, Co
 
     Ok(dploy_config)
 }
+
+// pub(crate) fn load_arg_config(config_dir_path: &Utf8Path) -> Result<Option<ArgumentConfig>, ConfigError> {
+//     let config = load_dploy_config(config_dir_path)?;
+//     config.a
+
+//     Ok(dploy_config)
+// }
 
 pub(crate) fn overwrite_option<T>(original: Option<T>, replacing: Option<T>) -> Option<T> {
     match replacing {
@@ -164,32 +171,40 @@ fn overwrite_arguments(
     }
 }
 
-fn overwrite_state_config(base: StateConfig, replacing: StateConfig) -> StateConfig {
-    StateConfig {
-        state_path: replacing.state_path.or(base.state_path),
-        state_root: replacing.state_root.or(base.state_root),
-        address: replacing.address.or(base.address),
-    }
-}
+// fn overwrite_state_config(base: StateConfig, replacing: StateConfig) -> StateConfig {
+//     StateConfig {
+//         address: replacing.address.or(base.address),
+//     }
+// }
 
-fn overwrite_config(root_config: Config, overwrite_config: Config) -> Config {
-    Config {
-        argument: merge_option(
-            root_config.argument,
-            overwrite_config.argument,
-            &overwrite_arguments,
-        ),
-        state: merge_option(
-            root_config.state,
-            overwrite_config.state,
-            &overwrite_state_config,
-        ),
-    }
+// fn overwrite_config(root_config: Config, overwrite_config: Config) -> Config {
+//     Config {
+//         argument: merge_option(
+//             root_config.argument,
+//             overwrite_config.argument,
+//             &overwrite_arguments,
+//         ),
+//         state: merge_option(
+//             root_config.state,
+//             overwrite_config.state,
+//             &overwrite_state_config,
+//         ),
+//     }
+// }
+
+fn overwrite_arg_config(
+    root_config: Option<ArgumentConfig>,
+    overwrite_config: Option<ArgumentConfig>,
+) -> Option<ArgumentConfig> {
+    merge_option(root_config, overwrite_config, &overwrite_arguments)
 }
 
 /// The relative path is normalized, so if it contains symlinks unexpected behavior might happen.
 /// This is designed to work only for simple descent down a directory.
-fn get_component_paths(start_path: &Utf8Path, final_path: &RelativePath) -> Vec<Utf8PathBuf> {
+pub(crate) fn get_component_paths(
+    start_path: &Utf8Path,
+    final_path: &RelativePath,
+) -> Vec<Utf8PathBuf> {
     let paths: Vec<Utf8PathBuf> = final_path
         .normalize()
         .components()
@@ -202,26 +217,54 @@ fn get_component_paths(start_path: &Utf8Path, final_path: &RelativePath) -> Vec<
     paths
 }
 
-/// Be sure the relative path is just a simple ./child/child/child2 ...etc relative path (the leading
-/// ./ is optional)
-pub(crate) fn traverse_configs(
+// /// Be sure the relative path is just a simple ./child/child/child2 ...etc relative path (the leading
+// /// ./ is optional)
+// pub(crate) fn traverse_configs(
+//     start_path: &Utf8Path,
+//     final_path: &RelativePath,
+// ) -> Result<Config, ConfigError> {
+//     debug!(
+//         "Traversing configs from {:?} to relative {:?}",
+//         start_path, final_path
+//     );
+
+//     let root_config = load_dploy_config(start_path)?;
+
+//     let paths = get_component_paths(start_path, final_path);
+
+//     let combined_config = paths.iter().try_fold(root_config, |state, path| {
+//         let inner_config = load_dploy_config(path);
+
+//         match inner_config {
+//             Ok(config) => ControlFlow::Continue(overwrite_config(state, config)),
+//             Err(source) => ControlFlow::Break(source),
+//         }
+//     });
+
+//     match combined_config {
+//         ControlFlow::Break(e) => Err(e),
+//         ControlFlow::Continue(config) => Ok(config),
+//     }
+// }
+
+pub(crate) fn traverse_arg_configs(
     start_path: &Utf8Path,
     final_path: &RelativePath,
-) -> Result<Config, ConfigError> {
+) -> Result<Option<ArgumentConfig>, ConfigError> {
     debug!(
         "Traversing configs from {:?} to relative {:?}",
         start_path, final_path
     );
 
-    let root_config = load_dploy_config(start_path)?;
+    let root_config = load_dploy_config(start_path)?.argument;
 
     let paths = get_component_paths(start_path, final_path);
 
     let combined_config = paths.iter().try_fold(root_config, |state, path| {
-        let inner_config = load_dploy_config(path);
+        let inner_config = load_dploy_config(path).map(|c| c.argument);
 
         match inner_config {
-            Ok(config) => ControlFlow::Continue(overwrite_config(state, config)),
+            Ok(config) => ControlFlow::Continue(overwrite_arg_config(state, config)),
             Err(source) => ControlFlow::Break(source),
         }
     });

@@ -2,12 +2,15 @@ use std::env::current_dir;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use relative_path::{RelativePath, RelativePathBuf};
-use tracing::{debug, instrument};
+use tracing::debug;
 
-use crate::{filesystem::WrapToPath, next::git::git_root_origin_url};
+use crate::{
+    filesystem::WrapToPath,
+    next::{config::load_dploy_config, git::git_root_origin_url},
+};
 
 use super::{
-    config::{traverse_configs, ConfigAddress, ConfigVar, StateConfig},
+    config::{ConfigAddress, ConfigVar},
     errors::{AddressError, StateError, StateErrorKind, WrapStateErr},
     fs::get_dirs,
     git::get_dir_from_git,
@@ -28,7 +31,6 @@ impl Default for InferContext {
 pub struct LocalAddressIn {
     pub resolve_root: Option<String>,
     pub state_path: Option<String>,
-    pub state_root: Option<String>,
 }
 #[derive(Debug, Clone, Default)]
 pub struct GitAddressIn {
@@ -37,7 +39,6 @@ pub struct GitAddressIn {
     pub git_ref: Option<String>,
     pub target_resolve_root: Option<String>,
     pub state_path: Option<String>,
-    pub state_root: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,27 +48,17 @@ pub enum AddressIn {
 }
 
 impl AddressIn {
-    pub(crate) fn from_run(
-        resolve_root: Option<String>,
-        state_path: Option<String>,
-        state_root: Option<String>,
-    ) -> Self {
+    pub(crate) fn from_run(resolve_root: Option<String>, state_path: Option<String>) -> Self {
         AddressIn::Local(LocalAddressIn {
             resolve_root,
             state_path,
-            state_root,
         })
     }
 
-    pub(crate) fn from_secret(
-        resolve_root: Option<String>,
-        state_path: Option<String>,
-        state_root: Option<String>,
-    ) -> Self {
+    pub(crate) fn from_secret(resolve_root: Option<String>, state_path: Option<String>) -> Self {
         AddressIn::Local(LocalAddressIn {
             resolve_root,
             state_path,
-            state_root,
         })
     }
 
@@ -77,7 +68,6 @@ impl AddressIn {
         git_ref: Option<String>,
         target_resolve_root: Option<String>,
         state_path: Option<String>,
-        state_root: Option<String>,
     ) -> Self {
         AddressIn::Git(GitAddressIn {
             url,
@@ -85,7 +75,6 @@ impl AddressIn {
             git_ref,
             target_resolve_root,
             state_path,
-            state_root,
         })
     }
 }
@@ -107,7 +96,8 @@ pub(crate) fn parse_cli_vars(envs: Vec<String>) -> Vec<ConfigVar> {
 pub(crate) struct Address {
     pub(crate) name: String,
     pub(crate) root: AddressRoot,
-    pub(crate) state_root: RelativePathBuf,
+    // pub(crate) arg_root: RelativePathBuf,
+    // pub(crate) arg_path: RelativePathBuf,
     pub(crate) state_path: RelativePathBuf,
 }
 
@@ -132,7 +122,10 @@ fn url_local(url: String, local: bool, relative: &Utf8Path) -> String {
     if local {
         let path = Utf8Path::new(&url);
         if path.is_relative() {
-            RelativePath::new(&url).to_utf8_path(relative).as_str().to_owned()
+            RelativePath::new(&url)
+                .to_utf8_path(relative)
+                .as_str()
+                .to_owned()
         } else {
             url
         }
@@ -152,7 +145,8 @@ impl Address {
                 git_ref,
                 target_path,
                 state_path,
-                state_root,
+                // arg_root,
+                // arg_path
             } => {
                 let local = local.unwrap_or_default();
                 let url = url_local(url, local, resolve_root);
@@ -166,13 +160,15 @@ impl Address {
                         path: RelativePathBuf::from(target_path.unwrap_or_default()),
                     }),
                     state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
-                    state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
+                    // arg_root: RelativePathBuf::from(arg_root.unwrap_or_default()),
+                    // arg_path: RelativePathBuf::from(arg_path.unwrap_or_default()),
                 }
-        }   ,
+            }
             ConfigAddress::Local {
                 path,
                 state_path,
-                state_root,
+                // arg_root,
+                // arg_path
             } => {
                 let address_root = Utf8PathBuf::from(path.clone());
                 let address_rel = RelativePathBuf::from_path(&address_root).ok();
@@ -182,13 +178,15 @@ impl Address {
                     address_root
                 };
 
-                let name = parse_url_name(root.as_str()).to_state_err("Error getting name from address root!")?;
+                let name = parse_url_name(root.as_str())
+                    .to_state_err("Error getting name from address root!")?;
 
                 Address {
                     name,
                     root: AddressRoot::Local(root),
                     state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
-                    state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
+                    // arg_root: RelativePathBuf::from(arg_root.unwrap_or_default()),
+                    // arg_path: RelativePathBuf::from(arg_path.unwrap_or_default()),
                 }
             }
         };
@@ -205,11 +203,10 @@ impl Address {
                 local,
                 git_ref,
                 state_path,
-                state_root,
                 target_resolve_root,
             }) => {
                 let current_dir = get_current_dir()?;
-                
+
                 let url = if let Some(url) = url {
                     url_local(url, local, &current_dir)
                 } else {
@@ -232,13 +229,13 @@ impl Address {
                         path: RelativePathBuf::from(target_resolve_root.unwrap_or_default()),
                     }),
                     state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
-                    state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
+                    // arg_root: RelativePathBuf::from(arg_root.unwrap_or_default()),
+                    // arg_path: RelativePathBuf::from(arg_path.unwrap_or_default()),
                 }
             }
             AddressIn::Local(LocalAddressIn {
                 resolve_root,
                 state_path,
-                state_root,
             }) => {
                 let resolve_root = resolve_root.map(Utf8PathBuf::from).unwrap_or_default();
                 let resolve_root_rel = RelativePathBuf::from_path(&resolve_root).ok();
@@ -266,7 +263,6 @@ impl Address {
                     name,
                     root: AddressRoot::Local(resolve_root),
                     state_path: RelativePathBuf::from(state_path.unwrap_or_default()),
-                    state_root: RelativePathBuf::from(state_root.unwrap_or_default()),
                 }
             }
         };
@@ -286,83 +282,94 @@ pub(crate) struct GitAddress {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) enum StateStep {
+    None,
+    Address(Address),
+    Config,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct State {
     pub(crate) name: String,
-    pub(crate) state_root: RelativePathBuf,
-    pub(crate) state_path: RelativePathBuf,
+    // pub(crate) arg_root: RelativePathBuf,
+    // pub(crate) arg_path: RelativePathBuf,
     pub(crate) resolve_root: Utf8PathBuf,
-    pub(crate) address: Option<Address>,
+    pub(crate) state_path: RelativePathBuf,
+    pub(crate) step: StateStep, // pub(crate) address: Option<Address>,
 }
 
 impl State {
-    fn merge_config(&self, other: StateConfig) -> Result<Self, StateError> {
-        let address = other
-            .address
-            .map(|a| Address::from_config_addr(a, &self.resolve_root))
-            .transpose()?.or(self.address.clone());
+    // fn merge_config(&self, other: StateConfig) -> Result<Self, StateError> {
+    //     let address = other
+    //         .address
+    //         .map(|a| Address::from_config_addr(a, &self.resolve_root))
+    //         .transpose()?.or(self.address.clone());
 
-        let state = Self {
-            name: self.name.clone(),
-            state_path: other
-                .state_path
-                .map(Into::into)
-                .unwrap_or(self.state_path.clone()),
-            state_root: other
-                .state_root
-                .map(Into::into)
-                .unwrap_or(self.state_root.clone()),
-            resolve_root: self.resolve_root.clone(),
-            address,
-        };
+    //     let state = Self {
+    //         name: self.name.clone(),
+    //         state_path: other
+    //             .state_path
+    //             .map(Into::into)
+    //             .unwrap_or(self.state_path.clone()),
+    //         state_root: other
+    //             .state_root
+    //             .map(Into::into)
+    //             .unwrap_or(self.state_root.clone()),
+    //         resolve_root: self.resolve_root.clone(),
+    //         address,
+    //     };
 
-        Ok(state)
-    }
+    //     Ok(state)
+    // }
 
-    /// Checks if a state is different to another one for the purposes of converging to a state.
-    fn same(&self, other: &Self) -> bool {
-        self.resolve_root == other.resolve_root
-            && self.state_path.normalize() == other.state_path.normalize()
-            && self.state_root.normalize() == other.state_root.normalize()
-    }
+    //     /// Checks if a state is different to another one for the purposes of converging to a state.
+    //     fn same(&self, other: &Self) -> bool {
+    //         self.resolve_root == other.resolve_root
+    //             && self.state_path.normalize() == other.state_path.normalize()
+    //             && self.state_root.normalize() == other.state_root.normalize()
+    //     }
 }
 
 #[derive(Debug)]
 pub(crate) struct ResolveState {
-    pub(crate) state_root: Utf8PathBuf,
-    pub(crate) state_path: RelativePathBuf,
     pub(crate) resolve_root: Utf8PathBuf,
+    pub(crate) state_path: RelativePathBuf,
     pub(crate) name: String,
     pub(crate) sub: String,
     pub(crate) hash: String,
 }
 
-#[instrument(name = "converge", level = "debug", skip_all)]
-fn converge_state(state: &State) -> Result<State, StateError> {
-    let mut state = state.clone();
-    let mut i = 0;
-    let iter = loop {
-        let state_root_path = state.state_root.to_utf8_path(&state.resolve_root);
-        let config = traverse_configs(&state_root_path, &state.state_path)
-            .to_state_err("Failed to read configs for determining new state.")?;
-        let new_state = if let Some(config_state) = config.state {
-            state.merge_config(config_state)?
-        } else {
-            break i + 1;
-        };
-        debug!("New intermediate state {:?}", &new_state);
+// #[instrument(name = "converge", level = "debug", skip_all)]
+// fn converge_state(state: &State) -> Result<State, StateError> {
+//     let mut state = state.clone();
+//     let mut i = 0;
+//     //let state_root_path = state.state_root.to_utf8_path(&state.resolve_root);
+//     //let paths = get_component_paths(&state_root_path, &state.state_path);
+//     let iter = loop {
 
-        let do_break = new_state.same(&state);
-        state = new_state;
-        if do_break {
-            break i + 1;
-        }
+//         let state_path = state.state_path.to_utf8_path(&state.resolve_root);
 
-        i += 1;
-    };
-    debug!("Converged to state {:?} in {} iterations.", &state, iter);
+//         let config = load_dploy_config(&state_path)
+//             .to_state_err("Failed to read configs for determining new state.")?;
+//         let new_state = if let Some(config_state) = config.state {
+//             state.merge_config(co/nfig_state)?
+//         } else {
+//             break i + 1;
+//         };
+//         debug!("New intermediate state {:?}", &new_state);
 
-    Ok(state)
-}
+//         let do_break = new_state.same(&state);
+//         state = new_state;
+//         if do_break {
+//             break i + 1;
+//         }
+
+//         i += 1;
+//     };
+//     debug!("Converged to state {:?} in {} iterations.", &state, iter);
+
+//     Ok(state)
+// }
 
 /// Parse a repo URL to extract a "name" from it, as well as encode the part before the name to still uniquely
 /// identify it. Only supports forward slashes as path seperator.
@@ -394,23 +401,20 @@ pub(crate) fn parse_url_name(url: &str) -> Result<String, AddressError> {
 
 fn resolve_address(address: Address, store_dir: &Utf8Path) -> Result<State, StateError> {
     debug!("Resolving address {:?}", address);
-    
+
     let Address {
         name,
         state_path,
-        state_root,
         root,
     } = address;
-    
 
     match root {
-        AddressRoot::Git(addr) => get_dir_from_git(addr, &state_path, &state_root, store_dir),
+        AddressRoot::Git(addr) => get_dir_from_git(addr, state_path, store_dir),
         AddressRoot::Local(path) => Ok(State {
             name,
             resolve_root: path,
             state_path,
-            state_root,
-            address: None,
+            step: StateStep::Config,
         }),
     }
 }
@@ -427,14 +431,26 @@ impl Default for StateOptions {
     }
 }
 
-pub(crate) fn converge_address(address: Address, opt: StateOptions) -> Result<State, StateError> {
-    let mut state = resolve_address(address, &opt.store_dir)?;
-    state = converge_state(&state)?;
-
-    while let Some(address) = state.address.clone() {
-        state = resolve_address(address, &opt.store_dir)?;
-        debug!("Moved to address, new state is {:?}", state);
-        state = converge_state(&state)?;
+pub(crate) fn converge_state(mut state: State, opt: StateOptions) -> Result<State, StateError> {
+    loop {
+        match state.step {
+            StateStep::None => break,
+            StateStep::Address(address) => state = resolve_address(address, &opt.store_dir)?,
+            StateStep::Config => {
+                let config_dir = state.state_path.to_utf8_path(&state.resolve_root);
+                let config = load_dploy_config(&config_dir)
+                    .to_state_err("Failed to load config.")?
+                    .state;
+                let addr = config.and_then(|c| c.address);
+                match addr {
+                    Some(addr) => {
+                        state.step =
+                            StateStep::Address(Address::from_config_addr(addr, &config_dir)?)
+                    }
+                    None => state.step = StateStep::None,
+                }
+            }
+        }
     }
 
     Ok(state)
@@ -446,21 +462,12 @@ pub(crate) fn create_resolve_state(
     opt: StateOptions,
 ) -> Result<ResolveState, StateError> {
     let address = Address::from_addr_in(addr_in, infer_ctx)?;
-    let state = converge_address(address, opt)?;
-
-    
-
-    // let name = state
-    //     .resolve_root
-    //     .file_name()
-    //     .map(|s| s.to_string())
-    //     .ok_or_else(|| StateErrorKind::InvalidRoot(state.resolve_root.to_string()))
-    //     .to_state_err("Getting context name from context root path for new state.")?;
+    let state = resolve_address(address, &opt.store_dir)?;
+    let state = converge_state(state, opt)?;
 
     let resolve_state = ResolveState {
-        state_root: state.state_root.to_utf8_path(&state.resolve_root),
-        state_path: state.state_path,
         resolve_root: state.resolve_root,
+        state_path: state.state_path,
         name: state.name,
         sub: "tidploy_root".to_owned(),
         hash: "todo_hash".to_owned(),

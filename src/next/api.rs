@@ -36,14 +36,14 @@ impl GlobalArguments {
     fn run_in(&self) -> AddressIn {
         match self.address.clone() {
             Some(address) => address,
-            None => AddressIn::from_run(None, None, None),
+            None => AddressIn::from_run(None, None),
         }
     }
 
     fn secret_in(&self) -> AddressIn {
         match self.address.clone() {
             Some(address) => address,
-            None => AddressIn::from_secret(None, None, None),
+            None => AddressIn::from_secret(None, None),
         }
     }
 

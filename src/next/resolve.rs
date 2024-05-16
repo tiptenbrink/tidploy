@@ -1,14 +1,20 @@
-use std::{env, fmt::Debug};
+use std::{env, fmt::Debug, ops::ControlFlow};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use relative_path::{RelativePath, RelativePathBuf};
 use tracing::{debug, instrument};
 
-use crate::filesystem::WrapToPath;
+use crate::{
+    filesystem::WrapToPath,
+    next::config::{get_component_paths, merge_option},
+};
 
 use super::{
-    config::{merge_vars, traverse_configs, ArgumentConfig, ConfigScope, ConfigVar},
-    errors::ResolutionError,
+    config::{
+        load_dploy_config, merge_vars, traverse_arg_configs, ArgumentConfig, Config, ConfigScope,
+        ConfigVar,
+    },
+    errors::{ConfigError, ResolutionError, StateError, WrapStateErr},
     state::ResolveState,
 };
 
@@ -20,8 +26,7 @@ pub(crate) struct SecretScopeArguments {
     pub(crate) require_hash: Option<bool>,
 }
 
-impl SecretScopeArguments {
-    /// Overrides fields with other if other has them defined
+impl Mergeable for SecretScopeArguments {
     fn merge(self, other: Self) -> Self {
         Self {
             service: other.service.or(self.service),
@@ -43,15 +48,70 @@ impl From<ConfigScope> for SecretScopeArguments {
     }
 }
 
+pub(crate) trait Mergeable {
+    fn merge(self, other: Self) -> Self;
+}
+
+impl<T: Mergeable> Mergeable for Option<T> {
+    fn merge(self, other: Self) -> Self {
+        let run_merge = |a: T, b: T| -> T { a.merge(b) };
+
+        merge_option(self, other, &run_merge)
+    }
+}
+
+pub(crate) trait Resolved<U> {
+    fn resolve(self, resolve_root: &Utf8Path) -> U;
+}
+
+pub(crate) trait Resolvable<T> {
+    fn resolve_from(value: T, resolve_root: &Utf8Path) -> Self;
+}
+
+impl<T, U: Resolvable<T>> Resolved<U> for T {
+    fn resolve(self, resolve_root: &Utf8Path) -> U {
+        U::resolve_from(self, resolve_root)
+    }
+}
+
+impl Resolvable<String> for Utf8PathBuf {
+    fn resolve_from(value: String, resolve_root: &Utf8Path) -> Utf8PathBuf {
+        let p = RelativePathBuf::from(value);
+        p.to_utf8_path(resolve_root)
+    }
+}
+
+impl Resolvable<Config> for Option<RunArguments> {
+    fn resolve_from(value: Config, resolve_root: &Utf8Path) -> Option<RunArguments> {
+        value
+            .argument
+            .map(|c| RunArguments::from_config(c, resolve_root))
+    }
+}
+
+impl Resolvable<Config> for Option<SecretScopeArguments> {
+    fn resolve_from(value: Config, _resolve_root: &Utf8Path) -> Option<SecretScopeArguments> {
+        value
+            .argument
+            .and_then(|c| c.scope.map(SecretScopeArguments::from))
+    }
+}
+
+impl<T, U: Resolvable<T>> Resolvable<Option<T>> for Option<U> {
+    fn resolve_from(value: Option<T>, resolve_root: &Utf8Path) -> Option<U> {
+        value.map(|t| t.resolve(resolve_root))
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct RunArguments {
-    pub(crate) executable: Option<String>,
-    pub(crate) execution_path: Option<String>,
+    pub(crate) executable: Option<Utf8PathBuf>,
+    pub(crate) execution_path: Option<Utf8PathBuf>,
     pub(crate) envs: Vec<ConfigVar>,
     pub(crate) scope_args: SecretScopeArguments,
 }
 
-impl RunArguments {
+impl Mergeable for RunArguments {
     /// Overrides fields with other if other has them defined
     fn merge(self, other: Self) -> Self {
         Self {
@@ -63,11 +123,11 @@ impl RunArguments {
     }
 }
 
-impl From<ArgumentConfig> for RunArguments {
-    fn from(value: ArgumentConfig) -> Self {
+impl RunArguments {
+    fn from_config(value: ArgumentConfig, resolve_root: &Utf8Path) -> Self {
         RunArguments {
-            executable: value.executable,
-            execution_path: value.execution_path,
+            executable: value.executable.resolve(resolve_root),
+            execution_path: value.execution_path.resolve(resolve_root),
             envs: value.envs.unwrap_or_default(),
             scope_args: value.scope.map(|s| s.into()).unwrap_or_default(),
         }
@@ -126,7 +186,7 @@ fn env_secret_args() -> SecretArguments {
 }
 
 /// Note that `envs` cannot be set from env and must thus always be replaced with some sensible value.
-fn env_run_args() -> RunArguments {
+fn env_run_args(resolve_root: &Utf8Path) -> RunArguments {
     let scope_args = env_scope_args();
     let mut run_arguments = RunArguments {
         scope_args,
@@ -135,8 +195,10 @@ fn env_run_args() -> RunArguments {
 
     for (k, v) in env::vars() {
         match k.as_str() {
-            "TIDPLOY_RUN_EXECUTABLE" => run_arguments.executable = Some(v),
-            "TIDPLOY_RUN_EXECUTION_PATH" => run_arguments.execution_path = Some(v),
+            "TIDPLOY_RUN_EXECUTABLE" => run_arguments.executable = Some(v.resolve(resolve_root)),
+            "TIDPLOY_RUN_EXECUTION_PATH" => {
+                run_arguments.execution_path = Some(v.resolve(resolve_root))
+            }
             _ => {}
         }
     }
@@ -147,7 +209,7 @@ fn env_run_args() -> RunArguments {
 pub(crate) trait Resolve<Resolved>: Sized {
     fn merge_env_config(
         self,
-        state_root: &Utf8Path,
+        resolve_root: &Utf8Path,
         state_path: &RelativePath,
     ) -> Result<Self, ResolutionError>;
 
@@ -172,44 +234,109 @@ fn resolve_scope(
     }
 }
 
-impl Resolve<RunResolved> for RunArguments {
-    fn merge_env_config(
-        self,
-        state_root: &Utf8Path,
-        state_path: &RelativePath,
-    ) -> Result<Self, ResolutionError> {
-        let config = traverse_configs(state_root, state_path)?;
+// impl Resolve<RunResolved> for RunArguments {
+//     fn merge_env_config(
+//         self,
+//         resolve_root: &Utf8Path,
+//         state_path: &RelativePath,
+//     ) -> Result<Self, ResolutionError> {
+//         let config = traverse_arg_configs(resolve_root, state_path)?;
 
-        let run_args_env = env_run_args();
+//         let run_args_env = env_run_args();
 
-        let merged_args = run_args_env.merge(self);
+//         let merged_args = run_args_env.merge(self);
 
-        let config_run = config.argument.map(RunArguments::from).unwrap_or_default();
+//         let config_run = config.map(RunArguments::from).unwrap_or_default();
 
-        Ok(config_run.merge(merged_args))
-    }
+//         Ok(config_run.merge(merged_args))
+//     }
 
-    fn resolve(self, resolve_root: &Utf8Path, name: &str, sub: &str, hash: &str) -> RunResolved {
-        let scope = resolve_scope(self.scope_args, name, sub, hash);
+//     fn resolve(self, resolve_root: &Utf8Path, name: &str, sub: &str, hash: &str) -> RunResolved {
+//         let scope = resolve_scope(self.scope_args, name, sub, hash);
 
-        let relative_exe = RelativePathBuf::from(self.executable.unwrap_or("entrypoint.sh".to_owned()));
-        let relative_exn_path = RelativePathBuf::from(self.execution_path.unwrap_or("".to_owned()));
-        RunResolved {
-            executable: relative_exe.to_utf8_path(resolve_root),
-            execution_path: relative_exn_path.to_utf8_path(resolve_root),
-            envs: self.envs,
-            scope,
+//         let relative_exe = RelativePathBuf::from(self.executable.unwrap_or("entrypoint.sh".to_owned()));
+//         let relative_exn_path = RelativePathBuf::from(self.execution_path.unwrap_or("".to_owned()));
+//         RunResolved {
+//             executable: relative_exe.to_utf8_path(resolve_root),
+//             execution_path: relative_exn_path.to_utf8_path(resolve_root),
+//             envs: self.envs,
+//             scope,
+//         }
+//     }
+// }
+
+pub(crate) fn resolve_run(
+    resolve_state: ResolveState,
+    cli_args: RunArguments,
+) -> Result<RunResolved, StateError> {
+    let run_args_env = env_run_args(&resolve_state.resolve_root);
+    let merged_args = run_args_env.merge(cli_args);
+
+    let config_args: Option<RunArguments> =
+        traverse_args(&resolve_state.resolve_root, &resolve_state.state_path)
+            .to_state_err("Failed to traverse config.")?;
+
+    let final_args = config_args.unwrap_or_default().merge(merged_args);
+
+    let scope = resolve_scope(
+        final_args.scope_args,
+        &resolve_state.name,
+        &resolve_state.sub,
+        &resolve_state.hash,
+    );
+
+    let execution_path = final_args
+        .execution_path
+        .unwrap_or_else(|| resolve_state.resolve_root.clone());
+
+    let resolved = RunResolved {
+        executable: final_args
+            .executable
+            .unwrap_or_else(|| execution_path.join("entrypoint.sh")),
+        execution_path,
+        envs: final_args.envs,
+        scope,
+    };
+
+    Ok(resolved)
+}
+
+pub(crate) fn traverse_args<U: Resolvable<Config> + Mergeable>(
+    start_path: &Utf8Path,
+    final_path: &RelativePath,
+) -> Result<U, ConfigError> {
+    debug!(
+        "Traversing configs from {:?} to relative {:?}",
+        start_path, final_path
+    );
+
+    let root_config = load_dploy_config(start_path)?;
+    let root_args = U::resolve_from(root_config, start_path);
+
+    let paths = get_component_paths(start_path, final_path);
+
+    let combined_config = paths.iter().try_fold(root_args, |state, path| {
+        let inner_config = load_dploy_config(path).map(|c| U::resolve_from(c, path));
+
+        match inner_config {
+            Ok(config) => ControlFlow::Continue(state.merge(config)),
+            Err(source) => ControlFlow::Break(source),
         }
+    });
+
+    match combined_config {
+        ControlFlow::Break(e) => Err(e),
+        ControlFlow::Continue(config) => Ok(config),
     }
 }
 
 impl Resolve<SecretResolved> for SecretArguments {
     fn merge_env_config(
         self,
-        state_root: &Utf8Path,
+        resolve_root: &Utf8Path,
         state_path: &RelativePath,
     ) -> Result<Self, ResolutionError> {
-        let config = traverse_configs(state_root, state_path)?;
+        let config = traverse_arg_configs(resolve_root, state_path)?;
 
         let secret_args_env = env_secret_args();
 
@@ -219,7 +346,6 @@ impl Resolve<SecretResolved> for SecretArguments {
         };
 
         let config_scope = config
-            .argument
             .and_then(|a| a.scope)
             .map(SecretScopeArguments::from)
             .unwrap_or_default();
@@ -251,7 +377,7 @@ pub(crate) fn merge_and_resolve<T: Debug>(
     unresolved_args: impl Resolve<T>,
     state: ResolveState,
 ) -> Result<T, ResolutionError> {
-    let merged_args = unresolved_args.merge_env_config(&state.state_root, &state.state_path)?;
+    let merged_args = unresolved_args.merge_env_config(&state.resolve_root, &state.state_path)?;
 
     let resolved = merged_args.resolve(&state.resolve_root, &state.name, &state.sub, &state.hash);
     debug!("Resolved as {:?}", resolved);
